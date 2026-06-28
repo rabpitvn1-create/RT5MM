@@ -14,6 +14,7 @@ Behavior:
 - Launcher app opens a real Android Activity for permission/status checking.
 - Quick Settings Tile cycles 30 -> 40 -> 50 -> 60 -> 30.
 - Tile icon changes to sun with 3 / 4 / 5 / 6 rays.
+- Launcher icon uses the premium black and gold sun style.
 - Uses Android Gradle Plugin, Java, D8 and normal Android packaging.
 
 Build output artifact name in GitHub Actions: `Redmi Screen Brightness.apk`.
