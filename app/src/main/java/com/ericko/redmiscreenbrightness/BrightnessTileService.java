@@ -13,8 +13,8 @@ public class BrightnessTileService extends TileService {
     private static final String PREFS = "brightness_state";
     private static final String KEY_PERCENT = "percent";
 
-    private static final int[] PERCENTS = new int[] {30, 40, 50, 60};
-    private static final int[] RAW_VALUES = new int[] {17, 26, 38, 49};
+    private static final int[] PERCENTS = new int[] {20, 30, 40, 50, 60};
+    private static final int[] RAW_VALUES = new int[] {11, 17, 26, 38, 49};
 
     @Override
     public void onTileAdded() {
@@ -80,10 +80,11 @@ public class BrightnessTileService extends TileService {
     }
 
     private static int getNextPercent(int current) {
+        if (current == 20) return 30;
         if (current == 30) return 40;
         if (current == 40) return 50;
         if (current == 50) return 60;
-        return 30;
+        return 20;
     }
 
     private static int getRawForPercent(int percent) {
@@ -96,6 +97,7 @@ public class BrightnessTileService extends TileService {
     }
 
     private int getIconForPercent(int percent) {
+        if (percent == 20) return R.drawable.ic_tile_20;
         if (percent == 40) return R.drawable.ic_tile_40;
         if (percent == 50) return R.drawable.ic_tile_50;
         if (percent == 60) return R.drawable.ic_tile_60;
