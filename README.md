@@ -11,9 +11,9 @@ Locked brightness raw values:
 
 Behavior:
 
-- Launcher app opens the system WRITE_SETTINGS permission screen/check screen.
+- Launcher app opens a real Android Activity for permission/status checking.
 - Quick Settings Tile cycles 30 -> 40 -> 50 -> 60 -> 30.
 - Tile icon changes to sun with 3 / 4 / 5 / 6 rays.
-- Uses Android Gradle Plugin, Kotlin, D8 and normal Android packaging.
+- Uses Android Gradle Plugin, Java, D8 and normal Android packaging.
 
 Build output artifact name in GitHub Actions: `Redmi Screen Brightness.apk`.
