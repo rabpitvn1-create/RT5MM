@@ -19,12 +19,16 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Check Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls "$ANDROID_HOME" || true
+          sdkmanager --list | head -80
 
       - name: Install Android packages
         run: |
-          yes | sdkmanager --licenses
+          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Download Gradle
@@ -33,7 +37,7 @@ jobs:
           unzip -q gradle.zip
 
       - name: Build debug APK
-        run: ./gradle-8.7/bin/gradle --no-daemon :app:assembleDebug
+        run: ./gradle-8.7/bin/gradle --no-daemon :app:assembleDebug --stacktrace
 
       - name: Rename APK
         run: |
