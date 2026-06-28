@@ -4,10 +4,10 @@ Android Quick Settings Tile app for Redmi Turbo 5 Max / HyperOS 3.
 
 Locked brightness raw values:
 
-- 30% = 19
-- 40% = 30
-- 50% = 42
-- 60% = 53
+- 30% = 17
+- 40% = 26
+- 50% = 38
+- 60% = 49
 
 Behavior:
 
