@@ -2,6 +2,7 @@ package com.ericko.redmiscreenbrightness;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -21,15 +22,25 @@ public class MainActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER);
+        root.setGravity(Gravity.CENTER_HORIZONTAL);
         int pad = dp(24);
-        root.setPadding(pad, pad, pad, pad);
+        root.setPadding(pad, dp(64), pad, pad);
+
+        TextView hyperOsLogo = new TextView(this);
+        hyperOsLogo.setText("Xiaomi HyperOS");
+        hyperOsLogo.setTextSize(28);
+        hyperOsLogo.setTypeface(Typeface.DEFAULT_BOLD);
+        hyperOsLogo.setTextColor(0xFFFF6900);
+        hyperOsLogo.setGravity(Gravity.CENTER);
+        root.addView(hyperOsLogo, new LinearLayout.LayoutParams(-1, -2));
 
         TextView title = new TextView(this);
         title.setText("Redmi Screen Brightness");
         title.setTextSize(22);
         title.setGravity(Gravity.CENTER);
-        root.addView(title, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
+        titleParams.setMargins(0, dp(48), 0, 0);
+        root.addView(title, titleParams);
 
         statusText = new TextView(this);
         statusText.setTextSize(16);
@@ -49,11 +60,11 @@ public class MainActivity extends Activity {
         root.addView(permissionButton, new LinearLayout.LayoutParams(-1, -2));
 
         Button testButton = new Button(this);
-        testButton.setText("Test set 30% raw 19");
+        testButton.setText("Test set 30% raw 17");
         testButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                boolean ok = BrightnessTileService.applyBrightness(MainActivity.this, 30, 19);
+                boolean ok = BrightnessTileService.applyBrightness(MainActivity.this, 30, 17);
                 Toast.makeText(MainActivity.this, ok ? "Brightness set to 30%" : "Permission missing or blocked", Toast.LENGTH_SHORT).show();
                 refreshStatus();
             }
