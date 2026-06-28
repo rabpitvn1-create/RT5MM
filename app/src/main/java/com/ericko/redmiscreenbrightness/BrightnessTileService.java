@@ -14,7 +14,7 @@ public class BrightnessTileService extends TileService {
     private static final String KEY_PERCENT = "percent";
 
     private static final int[] PERCENTS = new int[] {30, 40, 50, 60};
-    private static final int[] RAW_VALUES = new int[] {19, 30, 42, 53};
+    private static final int[] RAW_VALUES = new int[] {17, 26, 38, 49};
 
     @Override
     public void onTileAdded() {
