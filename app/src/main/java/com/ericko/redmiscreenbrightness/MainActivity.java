@@ -1,9 +1,12 @@
 package com.ericko.redmiscreenbrightness;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -16,6 +19,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 public class MainActivity extends Activity {
+    private static final int REQUEST_POST_NOTIFICATIONS = 1001;
+
     private TextView statusText;
     private final Handler statusHandler = new Handler(Looper.getMainLooper());
     private final Runnable statusRefreshRunnable = new Runnable() {
@@ -99,6 +104,7 @@ public class MainActivity extends Activity {
                 boolean ok = BrightnessTileService.applyBrightness(MainActivity.this, 30);
                 if (ok) {
                     AutoBrightnessManager.recordManualOverride(MainActivity.this);
+                    AutoBrightnessService.refresh(MainActivity.this);
                 }
                 Toast.makeText(MainActivity.this, ok ? "Brightness set to 30%" : "Permission missing or blocked", Toast.LENGTH_SHORT).show();
                 refreshStatus();
@@ -126,6 +132,21 @@ public class MainActivity extends Activity {
         super.onPause();
     }
 
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_POST_NOTIFICATIONS) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                    && grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "Notification permission granted", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Notification permission denied. Foreground service may still run without drawer notification.", Toast.LENGTH_LONG).show();
+            }
+            refreshStatus();
+        }
+    }
+
     private void enableAutoBrightness() {
         if (!AutoBrightnessManager.hasLightSensor(this)) {
             AutoBrightnessManager.markUnavailable(this);
@@ -140,21 +161,40 @@ public class MainActivity extends Activity {
             return;
         }
 
+        requestNotificationPermissionIfNeeded();
         AutoBrightnessService.start(this);
         Toast.makeText(this, "Auto Brightness enabled", Toast.LENGTH_SHORT).show();
         refreshStatus();
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQUEST_POST_NOTIFICATIONS);
+        }
     }
 
     private void refreshStatus() {
         boolean granted = Settings.System.canWrite(this);
         int percent = BrightnessLevels.getCurrentPercent(this);
         int raw = BrightnessLevels.getRawForPercent(percent);
+        String notificationStatus = getNotificationPermissionStatus();
 
         statusText.setText(
                 (granted ? "Permission: granted" : "Permission: missing")
+                        + "\nNotification: " + notificationStatus
                         + "\nCurrent level: " + percent + "% / raw " + raw
                         + "\n" + AutoBrightnessManager.getStatusText(this)
         );
+    }
+
+    private String getNotificationPermissionStatus() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return "not required";
+        }
+        return checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                ? "granted"
+                : "missing or denied";
     }
 
     private void openPermissionScreen() {
