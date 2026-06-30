@@ -184,6 +184,10 @@ public class AutoBrightnessManager implements SensorEventListener {
         return Math.max(0L, getManualUntil(context) - System.currentTimeMillis());
     }
 
+    public static float getLastLux(Context context) {
+        return getPrefs(context).getFloat(KEY_LAST_LUX, -1f);
+    }
+
     public static void markUnavailable(Context context) {
         getPrefs(context).edit()
                 .putBoolean(KEY_AUTO_ENABLED, false)
@@ -203,16 +207,23 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     public static String getStatusText(Context context) {
         SharedPreferences prefs = getPrefs(context);
-        if (!prefs.getBoolean(KEY_SENSOR_AVAILABLE, hasLightSensor(context))) {
+        boolean sensorAvailable = prefs.getBoolean(KEY_SENSOR_AVAILABLE, hasLightSensor(context));
+        if (!sensorAvailable) {
             return "Auto Brightness unavailable";
         }
-        float lux = prefs.getFloat(KEY_LAST_LUX, -1f);
-        String luxText = lux < 0f ? "unknown" : String.format(Locale.US, "%.1f lx", lux);
+
+        boolean enabled = isAutoEnabled(context);
+        float lastLux = getLastLux(context);
+        Mode mode = getSavedMode(context);
         long cooldown = getCooldownRemainingMs(context);
-        return "Auto Brightness: " + (isAutoEnabled(context) ? "On" : "Off")
+
+        String luxText = lastLux < 0f ? "unknown" : String.format(Locale.US, "%.1f lx", lastLux);
+        String cooldownText = cooldown > 0L ? (cooldown / 1000L) + "s" : "inactive";
+
+        return "Auto Brightness: " + (enabled ? "On" : "Off")
                 + "\nLux: " + luxText
-                + "\nMode: " + getDisplayMode(getSavedMode(context))
-                + "\nManual cooldown: " + (cooldown > 0L ? (cooldown / 1000L) + "s" : "inactive");
+                + "\nMode: " + getDisplayMode(mode)
+                + "\nManual cooldown: " + cooldownText;
     }
 
     public static String getDisplayMode(Mode mode) {
