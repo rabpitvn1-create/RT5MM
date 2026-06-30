@@ -35,6 +35,7 @@ public class BrightnessTileService extends TileService {
         boolean ok = applyBrightness(this, next, raw);
         if (ok) {
             AutoBrightnessManager.recordManualOverride(this);
+            AutoBrightnessService.refresh(this);
             updateTileView(next);
             Toast.makeText(this, "Brightness " + next + "%", Toast.LENGTH_SHORT).show();
         } else {
