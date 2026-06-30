@@ -5,6 +5,8 @@ import android.content.Intent;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
@@ -15,6 +17,14 @@ import android.widget.Toast;
 
 public class MainActivity extends Activity {
     private TextView statusText;
+    private final Handler statusHandler = new Handler(Looper.getMainLooper());
+    private final Runnable statusRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            refreshStatus();
+            statusHandler.postDelayed(this, 1000L);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,12 +69,37 @@ public class MainActivity extends Activity {
         });
         root.addView(permissionButton, new LinearLayout.LayoutParams(-1, -2));
 
+        Button enableAutoButton = new Button(this);
+        enableAutoButton.setText("Enable Auto Brightness");
+        enableAutoButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                enableAutoBrightness();
+            }
+        });
+        root.addView(enableAutoButton, new LinearLayout.LayoutParams(-1, -2));
+
+        Button disableAutoButton = new Button(this);
+        disableAutoButton.setText("Disable Auto Brightness");
+        disableAutoButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                AutoBrightnessService.stop(MainActivity.this);
+                Toast.makeText(MainActivity.this, "Auto Brightness disabled", Toast.LENGTH_SHORT).show();
+                refreshStatus();
+            }
+        });
+        root.addView(disableAutoButton, new LinearLayout.LayoutParams(-1, -2));
+
         Button testButton = new Button(this);
-        testButton.setText("Test set 30% raw 17");
+        testButton.setText("Test set 30% raw " + BrightnessLevels.getRawForPercent(30));
         testButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                boolean ok = BrightnessTileService.applyBrightness(MainActivity.this, 30, 17);
+                boolean ok = BrightnessTileService.applyBrightness(MainActivity.this, 30);
+                if (ok) {
+                    AutoBrightnessManager.recordManualOverride(MainActivity.this);
+                }
                 Toast.makeText(MainActivity.this, ok ? "Brightness set to 30%" : "Permission missing or blocked", Toast.LENGTH_SHORT).show();
                 refreshStatus();
             }
@@ -78,12 +113,48 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (AutoBrightnessManager.isAutoEnabled(this)) {
+            AutoBrightnessService.start(this);
+        }
+        statusHandler.removeCallbacks(statusRefreshRunnable);
+        statusHandler.post(statusRefreshRunnable);
+    }
+
+    @Override
+    protected void onPause() {
+        statusHandler.removeCallbacks(statusRefreshRunnable);
+        super.onPause();
+    }
+
+    private void enableAutoBrightness() {
+        if (!AutoBrightnessManager.hasLightSensor(this)) {
+            AutoBrightnessManager.markUnavailable(this);
+            Toast.makeText(this, "Auto Brightness unavailable", Toast.LENGTH_SHORT).show();
+            refreshStatus();
+            return;
+        }
+
+        if (!Settings.System.canWrite(this)) {
+            Toast.makeText(this, "Grant modify system settings permission first", Toast.LENGTH_SHORT).show();
+            openPermissionScreen();
+            return;
+        }
+
+        AutoBrightnessService.start(this);
+        Toast.makeText(this, "Auto Brightness enabled", Toast.LENGTH_SHORT).show();
         refreshStatus();
     }
 
     private void refreshStatus() {
         boolean granted = Settings.System.canWrite(this);
-        statusText.setText(granted ? "Permission granted. Add the tile to Control Center." : "Permission missing. Grant modify system settings.");
+        int percent = BrightnessLevels.getCurrentPercent(this);
+        int raw = BrightnessLevels.getRawForPercent(percent);
+
+        statusText.setText(
+                (granted ? "Permission: granted" : "Permission: missing")
+                        + "\nCurrent level: " + percent + "% / raw " + raw
+                        + "\n" + AutoBrightnessManager.getStatusText(this)
+        );
     }
 
     private void openPermissionScreen() {
