@@ -1,5 +1,38 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="48dp" android:height="48dp" android:viewportWidth="48" android:viewportHeight="48">
-    <path android:fillColor="#111111" android:pathData="M0,0 L48,0 L48,48 L0,48 Z" />
-    <path android:fillColor="#FFC107" android:pathData="M24,16 C19.58,16 16,19.58 16,24 C16,28.42 19.58,32 24,32 C28.42,32 32,28.42 32,24 C32,19.58 28.42,16 24,16 Z" />
-    <path android:strokeColor="#FFC107" android:strokeWidth="3" android:strokeLineCap="round" android:fillColor="@android:color/transparent" android:pathData="M24,5 L24,11 M24,37 L24,43 M5,24 L11,24 M37,24 L43,24 M10,10 L14.5,14.5 M38,10 L33.5,14.5 M10,38 L14.5,33.5 M38,38 L33.5,33.5" />
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path android:fillColor="#050505" android:pathData="M0,0 L108,0 L108,108 L0,108 Z" />
+
+    <!-- Blue energy flames inspired by the supplied artwork. -->
+    <path android:fillColor="#39BDF8" android:pathData="M58,66 C74,60 82,47 88,30 C89,46 82,60 69,74 C82,69 95,57 104,42 C99,62 83,77 60,86 C73,86 86,82 101,74 C88,91 67,97 42,96 C52,88 56,78 58,66 Z" />
+    <path android:fillColor="#7DDBFF" android:pathData="M65,52 C76,44 79,34 82,20 C86,35 79,50 66,63 C78,58 88,48 96,35 C93,51 82,65 64,74 C71,65 70,58 65,52 Z" />
+    <path android:fillColor="#111820" android:pathData="M56,56 C68,53 76,44 82,31 C82,43 76,55 66,65 C78,62 90,55 100,45 C94,62 80,75 58,82 C48,79 48,64 56,56 Z" />
+    <path android:fillColor="#2DB9F8" android:pathData="M32,84 C47,79 56,70 63,58 C62,72 52,83 37,92 C49,90 61,86 74,78 C62,96 43,101 22,100 C27,95 30,90 32,84 Z" />
+
+    <!-- Hair mass. -->
+    <path android:fillColor="#F8F8F8" android:pathData="M48,17 C34,18 23,28 19,42 C13,46 9,54 8,64 C15,58 21,54 29,53 C20,61 14,71 13,84 C22,75 30,69 40,67 C34,75 30,83 28,93 C37,86 43,78 48,68 C54,57 59,45 66,35 C62,24 56,17 48,17 Z" />
+    <path android:fillColor="#D9D9DE" android:pathData="M57,20 C45,20 34,27 27,39 C38,34 49,32 61,34 C55,40 48,44 39,47 C50,47 59,44 67,38 C68,30 64,24 57,20 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M24,45 C34,35 45,28 60,26 C49,30 40,37 34,49 C43,41 52,37 64,36 C53,41 45,48 40,59 C33,56 28,52 24,45 Z" />
+
+    <!-- Face profile. -->
+    <path android:fillColor="#FFE2D2" android:pathData="M39,37 C32,42 27,49 25,58 C30,64 38,66 47,63 C54,58 58,49 57,39 C51,36 45,35 39,37 Z" />
+    <path android:fillColor="#F2C6B6" android:pathData="M27,58 C33,62 39,63 47,60 C42,66 34,68 26,63 Z" />
+
+    <!-- Black feather/shadow near ear. -->
+    <path android:fillColor="#141820" android:pathData="M55,29 C64,22 70,16 76,7 C76,22 69,33 59,41 C70,37 78,30 85,20 C82,37 70,50 54,57 C51,47 51,37 55,29 Z" />
+    <path android:fillColor="#2C3138" android:pathData="M58,37 C67,33 74,27 81,17 C79,30 70,41 58,48 Z" />
+
+    <!-- Hair strands over face. -->
+    <path android:fillColor="#ECECF1" android:pathData="M44,19 C35,26 31,35 30,48 C36,38 43,31 54,26 C46,34 42,43 42,55 C48,43 56,34 66,27 C61,22 53,18 44,19 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M26,58 C18,63 12,70 9,80 C18,72 28,68 39,67 C31,73 24,82 21,94 C30,86 37,78 43,67 C36,67 30,64 26,58 Z" />
+    <path android:fillColor="#C8CAD1" android:pathData="M19,48 C12,55 8,63 6,74 C13,65 21,59 32,56 C26,55 22,52 19,48 Z" />
+
+    <!-- Eye and highlights. -->
+    <path android:fillColor="#1DAAF2" android:pathData="M45,48 C48,46 51,46 53,48 C51,51 47,52 45,48 Z" />
+    <path android:fillColor="#0B0D12" android:pathData="M43,46 C47,44 52,44 55,46 C51,45 47,46 44,49 Z" />
+    <path android:fillColor="#89E7FF" android:pathData="M68,45 L75,43 L72,48 Z" />
+    <path android:fillColor="#89E7FF" android:pathData="M79,30 L85,24 L84,36 Z" />
 </vector>
