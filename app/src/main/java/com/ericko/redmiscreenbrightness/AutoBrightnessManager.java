@@ -14,7 +14,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final String KEY_AUTO_MODE = "auto_brightness_mode";
     private static final String KEY_LAST_LUX = "auto_brightness_last_lux";
     private static final String KEY_SENSOR_AVAILABLE = "auto_brightness_sensor_available";
-    private static final String KEY_MANUAL_UNTIL = "auto_brightness_manual_until";
+    private static final String KEY_MANUAL_HOLD = "auto_brightness_manual_hold";
 
     private static final int DARK_PERCENT = 20;
     private static final int NORMAL_PERCENT = 30;
@@ -25,7 +25,6 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final float MAX_LUX = 120000f;
     private static final int SAMPLE_COUNT = 5;
     private static final long STABLE_MS = 3000L;
-    public static final long MANUAL_COOLDOWN_MS = 120000L;
 
     public enum Mode {
         OFF, DARK, NORMAL_LOCKED, BRIGHT, MANUAL_OVERRIDE, UNAVAILABLE
@@ -79,12 +78,12 @@ public class AutoBrightnessManager implements SensorEventListener {
         float avgLux = smooth(clampLux(event.values[0]));
         saveLastLux(appContext, avgLux);
 
-        long now = System.currentTimeMillis();
-        if (getManualUntil(appContext) > now) {
+        if (isManualHoldEnabled(appContext)) {
             saveMode(appContext, Mode.MANUAL_OVERRIDE);
             return;
         }
 
+        long now = System.currentTimeMillis();
         Mode previous = getSavedMode(appContext);
         Mode next = classify(avgLux, previous);
         if (candidate != next) {
@@ -109,7 +108,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         } else if (next == Mode.BRIGHT) {
             applyAutoPercent(BrightnessLevels.getMaxPercent(), Mode.BRIGHT);
         } else {
-            boolean returnedFromExtreme = previous == Mode.DARK || previous == Mode.BRIGHT;
+            boolean returnedFromExtreme = previous == Mode.DARK || previous == Mode.BRIGHT || previous == Mode.MANUAL_OVERRIDE;
             saveMode(appContext, Mode.NORMAL_LOCKED);
             if (returnedFromExtreme) {
                 applyAutoPercent(NORMAL_PERCENT, Mode.NORMAL_LOCKED);
@@ -165,6 +164,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     public static void setAutoEnabled(Context context, boolean enabled) {
         getPrefs(context).edit()
                 .putBoolean(KEY_AUTO_ENABLED, enabled)
+                .putBoolean(KEY_MANUAL_HOLD, false)
                 .putString(KEY_AUTO_MODE, enabled ? Mode.NORMAL_LOCKED.name() : Mode.OFF.name())
                 .apply();
     }
@@ -175,13 +175,28 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     public static void recordManualOverride(Context context) {
         getPrefs(context).edit()
-                .putLong(KEY_MANUAL_UNTIL, System.currentTimeMillis() + MANUAL_COOLDOWN_MS)
+                .putBoolean(KEY_MANUAL_HOLD, true)
                 .putString(KEY_AUTO_MODE, Mode.MANUAL_OVERRIDE.name())
                 .apply();
     }
 
-    public static long getCooldownRemainingMs(Context context) {
-        return Math.max(0L, getManualUntil(context) - System.currentTimeMillis());
+    public static void clearManualOverride(Context context) {
+        SharedPreferences prefs = getPrefs(context);
+        boolean autoEnabled = prefs.getBoolean(KEY_AUTO_ENABLED, false);
+        Mode currentMode = getSavedMode(context);
+        SharedPreferences.Editor editor = prefs.edit().putBoolean(KEY_MANUAL_HOLD, false);
+        if (currentMode == Mode.MANUAL_OVERRIDE) {
+            editor.putString(KEY_AUTO_MODE, autoEnabled ? Mode.NORMAL_LOCKED.name() : Mode.OFF.name());
+        }
+        editor.apply();
+    }
+
+    public static boolean isManualHoldEnabled(Context context) {
+        return getPrefs(context).getBoolean(KEY_MANUAL_HOLD, false);
+    }
+
+    public static String getManualOverrideStatusText(Context context) {
+        return isManualHoldEnabled(context) ? "until screen off" : "inactive";
     }
 
     public static float getLastLux(Context context) {
@@ -191,6 +206,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     public static void markUnavailable(Context context) {
         getPrefs(context).edit()
                 .putBoolean(KEY_AUTO_ENABLED, false)
+                .putBoolean(KEY_MANUAL_HOLD, false)
                 .putBoolean(KEY_SENSOR_AVAILABLE, false)
                 .putString(KEY_AUTO_MODE, Mode.UNAVAILABLE.name())
                 .apply();
@@ -215,15 +231,13 @@ public class AutoBrightnessManager implements SensorEventListener {
         boolean enabled = isAutoEnabled(context);
         float lastLux = getLastLux(context);
         Mode mode = getSavedMode(context);
-        long cooldown = getCooldownRemainingMs(context);
 
         String luxText = lastLux < 0f ? "unknown" : String.format(Locale.US, "%.1f lx", lastLux);
-        String cooldownText = cooldown > 0L ? (cooldown / 1000L) + "s" : "inactive";
 
         return "Auto Brightness: " + (enabled ? "On" : "Off")
                 + "\nLux: " + luxText
                 + "\nMode: " + getDisplayMode(mode)
-                + "\nManual cooldown: " + cooldownText;
+                + "\nManual override: " + getManualOverrideStatusText(context);
     }
 
     public static String getDisplayMode(Mode mode) {
@@ -233,10 +247,6 @@ public class AutoBrightnessManager implements SensorEventListener {
         if (mode == Mode.MANUAL_OVERRIDE) return "Manual Override";
         if (mode == Mode.UNAVAILABLE) return "Unavailable";
         return "Off";
-    }
-
-    private static long getManualUntil(Context context) {
-        return getPrefs(context).getLong(KEY_MANUAL_UNTIL, 0L);
     }
 
     private static void saveMode(Context context, Mode mode) {
