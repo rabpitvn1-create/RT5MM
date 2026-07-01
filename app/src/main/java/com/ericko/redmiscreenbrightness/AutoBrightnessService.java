@@ -5,13 +5,16 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 
 import java.util.Locale;
 
@@ -28,6 +31,8 @@ public class AutoBrightnessService extends Service {
     private Handler handler;
     private boolean foregroundStarted = false;
     private String lastNotificationSignature = "";
+    private BroadcastReceiver screenOffReceiver;
+    private boolean screenOffReceiverRegistered = false;
 
     private final Runnable notificationRefreshRunnable = new Runnable() {
         @Override
@@ -45,6 +50,7 @@ public class AutoBrightnessService extends Service {
         handler = new Handler(Looper.getMainLooper());
         manager = new AutoBrightnessManager(this);
         createNotificationChannel();
+        registerScreenOffReceiver();
     }
 
     @Override
@@ -61,6 +67,8 @@ public class AutoBrightnessService extends Service {
             shutdownAndStop();
             return START_NOT_STICKY;
         }
+
+        clearManualOverrideIfScreenOff();
 
         if (!foregroundStarted) {
             startForegroundSafely();
@@ -81,6 +89,7 @@ public class AutoBrightnessService extends Service {
 
     @Override
     public void onDestroy() {
+        unregisterScreenOffReceiver();
         if (handler != null) {
             handler.removeCallbacks(notificationRefreshRunnable);
         }
@@ -142,17 +151,17 @@ public class AutoBrightnessService extends Service {
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
         int percent = BrightnessLevels.getCurrentPercent(this);
         float lux = AutoBrightnessManager.getLastLux(this);
-        long cooldownMs = AutoBrightnessManager.getCooldownRemainingMs(this);
+        boolean manualHold = AutoBrightnessManager.isManualHoldEnabled(this);
 
         String luxText = formatLux(lux);
         String modeText = mode.name();
-        String cooldownText = cooldownMs > 0L ? "Manual override: " + (cooldownMs / 1000L) + "s" : "Manual override: inactive";
+        String manualText = manualHold ? "Manual override: until screen off" : "Manual override: inactive";
         String contentText = "Lux: " + luxText + " · Mode: " + modeText + " · Brightness: " + percent + "%";
         String bigText = "Auto Brightness đang chạy"
                 + "\nLux hiện tại: " + luxText
                 + "\nMode hiện tại: " + modeText
                 + "\nBrightness hiện tại: " + percent + "%"
-                + "\n" + cooldownText;
+                + "\n" + manualText;
 
         Notification.Builder builder;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -178,9 +187,9 @@ public class AutoBrightnessService extends Service {
     private String buildNotificationSignature() {
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
         int percent = BrightnessLevels.getCurrentPercent(this);
-        long cooldownBucket = AutoBrightnessManager.getCooldownRemainingMs(this) / 1000L;
+        boolean manualHold = AutoBrightnessManager.isManualHoldEnabled(this);
         float lux = AutoBrightnessManager.getLastLux(this);
-        return mode.name() + "|" + percent + "|" + Math.round(lux) + "|" + cooldownBucket;
+        return mode.name() + "|" + percent + "|" + Math.round(lux) + "|" + manualHold;
     }
 
     private void scheduleNotificationRefresh() {
@@ -229,6 +238,54 @@ public class AutoBrightnessService extends Service {
         NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (notificationManager != null) {
             notificationManager.createNotificationChannel(channel);
+        }
+    }
+
+    private void registerScreenOffReceiver() {
+        if (screenOffReceiverRegistered) {
+            return;
+        }
+        screenOffReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (intent != null && Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+                    AutoBrightnessManager.clearManualOverride(AutoBrightnessService.this);
+                    updateNotification(true);
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(screenOffReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                registerReceiver(screenOffReceiver, filter);
+            }
+            screenOffReceiverRegistered = true;
+        } catch (Throwable ignored) {
+            screenOffReceiverRegistered = false;
+        }
+    }
+
+    private void unregisterScreenOffReceiver() {
+        if (!screenOffReceiverRegistered || screenOffReceiver == null) {
+            return;
+        }
+        try {
+            unregisterReceiver(screenOffReceiver);
+        } catch (Throwable ignored) {
+        }
+        screenOffReceiverRegistered = false;
+        screenOffReceiver = null;
+    }
+
+    private void clearManualOverrideIfScreenOff() {
+        try {
+            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (powerManager != null && !powerManager.isInteractive()) {
+                AutoBrightnessManager.clearManualOverride(this);
+            }
+        } catch (Throwable ignored) {
         }
     }
 
