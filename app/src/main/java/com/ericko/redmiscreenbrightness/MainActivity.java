@@ -114,6 +114,14 @@ public class MainActivity extends Activity {
     }
 
     private void toggleProtection() {
+        if (!Settings.System.canWrite(this)) {
+            BrightnessLogManager.appendSnapshot(this, "WRITE_SETTINGS_MISSING_BUTTON", AutoBrightnessManager.getLastLux(this));
+            Toast.makeText(this, "Grant modify system settings permission first", Toast.LENGTH_SHORT).show();
+            openPermissionScreen();
+            refreshStatus();
+            return;
+        }
+
         if (AutoBrightnessManager.isAutoEnabled(this)) {
             AutoBrightnessService.stop(this);
             BrightnessLogManager.appendSnapshot(this, "PROTECTION_DISABLED", AutoBrightnessManager.getLastLux(this));
