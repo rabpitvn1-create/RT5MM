@@ -23,6 +23,7 @@ public class AutoBrightnessService extends Service {
     private static final String CHANNEL_NAME = "Auto Brightness";
     private static final int NOTIFICATION_ID = 3001;
     private static final long NOTIFICATION_REFRESH_MS = 30000L;
+    private static final long AUTO_UPDATE_MS = 5000L;
 
     private AutoBrightnessManager manager;
     private Handler handler;
@@ -36,6 +37,20 @@ public class AutoBrightnessService extends Service {
             if (handler != null && AutoBrightnessManager.isAutoEnabled(AutoBrightnessService.this)) {
                 handler.postDelayed(this, NOTIFICATION_REFRESH_MS);
             }
+        }
+    };
+
+    private final Runnable autoUpdateRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (handler == null || !AutoBrightnessManager.isAutoEnabled(AutoBrightnessService.this)) {
+                return;
+            }
+            if (manager != null) {
+                manager.evaluateLastLux("REDMI_INTERVAL_TICK");
+            }
+            updateNotification(false);
+            handler.postDelayed(this, AUTO_UPDATE_MS);
         }
     };
 
@@ -71,8 +86,10 @@ public class AutoBrightnessService extends Service {
         }
         manager.start();
         scheduleNotificationRefresh();
+        scheduleAutoUpdates();
 
         if (ACTION_REFRESH.equals(action)) {
+            manager.evaluateLastLux("REDMI_REFRESH_REQUEST");
             updateNotification(true);
         }
 
@@ -83,6 +100,7 @@ public class AutoBrightnessService extends Service {
     public void onDestroy() {
         if (handler != null) {
             handler.removeCallbacks(notificationRefreshRunnable);
+            handler.removeCallbacks(autoUpdateRunnable);
         }
         if (manager != null) {
             manager.stop();
@@ -143,15 +161,18 @@ public class AutoBrightnessService extends Service {
         int percent = BrightnessLevels.getCurrentPercent(this);
         float lux = AutoBrightnessManager.getLastLux(this);
         long cooldownMs = AutoBrightnessManager.getCooldownRemainingMs(this);
+        int adjust = BrightnessLevels.getMasterAdjust(this);
 
         String luxText = formatLux(lux);
         String modeText = mode.name();
+        String adjustText = adjust > 0 ? "+" + adjust : String.valueOf(adjust);
         String cooldownText = cooldownMs > 0L ? "Manual override: " + (cooldownMs / 1000L) + "s" : "Manual override: inactive";
         String contentText = "Lux: " + luxText + " · Mode: " + modeText + " · Brightness: " + percent + "%";
         String bigText = "Auto Brightness đang chạy"
                 + "\nLux hiện tại: " + luxText
                 + "\nMode hiện tại: " + modeText
                 + "\nBrightness hiện tại: " + percent + "%"
+                + "\nMaster adjust: " + adjustText + " raw"
                 + "\n" + cooldownText;
 
         Notification.Builder builder;
@@ -180,7 +201,8 @@ public class AutoBrightnessService extends Service {
         int percent = BrightnessLevels.getCurrentPercent(this);
         long cooldownBucket = AutoBrightnessManager.getCooldownRemainingMs(this) / 1000L;
         float lux = AutoBrightnessManager.getLastLux(this);
-        return mode.name() + "|" + percent + "|" + Math.round(lux) + "|" + cooldownBucket;
+        int adjust = BrightnessLevels.getMasterAdjust(this);
+        return mode.name() + "|" + percent + "|" + Math.round(lux) + "|" + cooldownBucket + "|" + adjust;
     }
 
     private void scheduleNotificationRefresh() {
@@ -191,9 +213,18 @@ public class AutoBrightnessService extends Service {
         handler.postDelayed(notificationRefreshRunnable, NOTIFICATION_REFRESH_MS);
     }
 
+    private void scheduleAutoUpdates() {
+        if (handler == null) {
+            handler = new Handler(Looper.getMainLooper());
+        }
+        handler.removeCallbacks(autoUpdateRunnable);
+        handler.postDelayed(autoUpdateRunnable, AUTO_UPDATE_MS);
+    }
+
     private void shutdownAndStop() {
         if (handler != null) {
             handler.removeCallbacks(notificationRefreshRunnable);
+            handler.removeCallbacks(autoUpdateRunnable);
         }
         if (manager != null) {
             manager.stop();
