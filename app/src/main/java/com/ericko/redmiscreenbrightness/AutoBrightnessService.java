@@ -23,7 +23,7 @@ public class AutoBrightnessService extends Service {
     private static final String CHANNEL_NAME = "Auto Brightness";
     private static final int NOTIFICATION_ID = 3001;
     private static final long NOTIFICATION_REFRESH_MS = 30000L;
-    private static final long AUTO_UPDATE_MS = 5000L;
+    private static final long AUTO_UPDATE_MS = 1000L;
 
     private AutoBrightnessManager manager;
     private Handler handler;
@@ -159,6 +159,7 @@ public class AutoBrightnessService extends Service {
 
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
         int percent = BrightnessLevels.getCurrentPercent(this);
+        int raw = BrightnessLevels.getSystemRaw(this, BrightnessLevels.getRawForPercent(this, percent));
         float lux = AutoBrightnessManager.getLastLux(this);
         long cooldownMs = AutoBrightnessManager.getCooldownRemainingMs(this);
         int adjust = BrightnessLevels.getMasterAdjust(this);
@@ -167,11 +168,11 @@ public class AutoBrightnessService extends Service {
         String modeText = mode.name();
         String adjustText = adjust > 0 ? "+" + adjust : String.valueOf(adjust);
         String cooldownText = cooldownMs > 0L ? "Manual override: " + (cooldownMs / 1000L) + "s" : "Manual override: inactive";
-        String contentText = "Lux: " + luxText + " · Mode: " + modeText + " · Brightness: " + percent + "%";
+        String contentText = "Lux: " + luxText + " · Mode: " + modeText + " · Raw: " + raw;
         String bigText = "Auto Brightness đang chạy"
                 + "\nLux hiện tại: " + luxText
                 + "\nMode hiện tại: " + modeText
-                + "\nBrightness hiện tại: " + percent + "%"
+                + "\nBrightness hiện tại: " + percent + "% / raw " + raw
                 + "\nMaster adjust: " + adjustText + " raw"
                 + "\n" + cooldownText;
 
@@ -202,7 +203,8 @@ public class AutoBrightnessService extends Service {
         long cooldownBucket = AutoBrightnessManager.getCooldownRemainingMs(this) / 1000L;
         float lux = AutoBrightnessManager.getLastLux(this);
         int adjust = BrightnessLevels.getMasterAdjust(this);
-        return mode.name() + "|" + percent + "|" + Math.round(lux) + "|" + cooldownBucket + "|" + adjust;
+        int raw = BrightnessLevels.getSystemRaw(this, -1);
+        return mode.name() + "|" + percent + "|" + raw + "|" + Math.round(lux) + "|" + cooldownBucket + "|" + adjust;
     }
 
     private void scheduleNotificationRefresh() {
