@@ -14,10 +14,15 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final String KEY_AUTO_MODE = "auto_brightness_mode";
     private static final String KEY_LAST_LUX = "auto_brightness_last_lux";
     private static final String KEY_SENSOR_AVAILABLE = "auto_brightness_sensor_available";
-    private static final String KEY_MANUAL_UNTIL = "auto_brightness_manual_until";
-    private static final String KEY_MANUAL_LUX = "auto_brightness_manual_lux";
+    private static final String KEY_USER_HOLD_UNTIL = "auto_brightness_user_hold_until";
+    private static final String KEY_USER_HOLD_LUX = "auto_brightness_user_hold_lux";
+    private static final String KEY_USER_HOLD_RAW = "auto_brightness_user_hold_raw";
+    private static final String KEY_USER_HOLD_AT = "auto_brightness_user_hold_at";
     private static final String KEY_LAST_AUTO_RAW = "auto_brightness_last_auto_raw";
     private static final String KEY_LAST_AUTO_AT = "auto_brightness_last_auto_at";
+    private static final String KEY_IGNORE_EXTERNAL_UNTIL = "auto_brightness_ignore_external_until";
+    private static final String KEY_EXTERNAL_CANDIDATE_RAW = "auto_brightness_external_candidate_raw";
+    private static final String KEY_EXTERNAL_CANDIDATE_SINCE = "auto_brightness_external_candidate_since";
 
     private static final int LEVEL_20 = 20;
     private static final int LEVEL_30 = 30;
@@ -29,13 +34,15 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final int SAMPLE_COUNT = 5;
     private static final long STABLE_MS = 2500L;
     private static final int RAW_CHANGE_TOLERANCE = 2;
-    private static final long AUTO_WRITE_GRACE_MS = 4000L;
-    private static final float LUX_CHANGE_PCT = 75f;
-    private static final float LUX_CHANGE_MIN = 5f;
-    public static final long MANUAL_COOLDOWN_MS = 120000L;
+    private static final int USER_CHANGE_MIN_RAW = 6;
+    private static final long APP_WRITE_GRACE_MS = 12000L;
+    private static final long USER_INTENT_STABLE_MS = 3000L;
+    public static final long USER_HOLD_MS = 45L * 60L * 1000L;
+    private static final float USER_HOLD_RELEASE_PCT = 120f;
+    private static final float USER_HOLD_RELEASE_MIN_LUX = 60f;
 
     public enum Mode {
-        OFF, PROTECTING, MANUAL_OVERRIDE, UNAVAILABLE
+        OFF, PROTECTING, USER_HOLD, UNAVAILABLE
     }
 
     private final Context appContext;
@@ -79,10 +86,25 @@ public class AutoBrightnessManager implements SensorEventListener {
         registered = false;
     }
 
-    public void resumeProtection(String event) {
-        clearManualOverride(appContext);
+    public void forceAutoReevaluate(String event) {
+        clearUserHold(appContext);
         clearAutoWriteTracking(appContext);
+        clearExternalCandidate(appContext);
+        beginAppWriteGrace(appContext);
         saveMode(appContext, Mode.PROTECTING);
+        candidatePercent = -1;
+        candidateSince = 0L;
+        BrightnessLogManager.appendSnapshot(appContext, event, getLastLux(appContext));
+        evaluateLastLux(event);
+    }
+
+    public void resumeProtection(String event) {
+        forceAutoReevaluate(event);
+    }
+
+    public void onScreenWake(String event) {
+        beginAppWriteGrace(appContext);
+        clearExternalCandidate(appContext);
         candidatePercent = -1;
         candidateSince = 0L;
         BrightnessLogManager.appendSnapshot(appContext, event, getLastLux(appContext));
@@ -114,22 +136,23 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     private void evaluateLux(float avgLux, String event) {
         long now = System.currentTimeMillis();
-        if (getManualUntil(appContext) > now) {
-            float manualLux = getManualLux(appContext);
-            if (!luxChangedEnough(avgLux, manualLux)) {
-                saveMode(appContext, Mode.MANUAL_OVERRIDE);
-                BrightnessLogManager.logSnapshotIfChanged(appContext, "MANUAL_OVERRIDE_HELD", avgLux);
+
+        if (isUserHoldActive(appContext, now)) {
+            float holdLux = getUserHoldLux(appContext);
+            if (!shouldReleaseUserHold(avgLux, holdLux)) {
+                saveMode(appContext, Mode.USER_HOLD);
+                BrightnessLogManager.logSnapshotIfChanged(appContext, "USER_HOLD_ACTIVE", avgLux);
                 return;
             }
-            clearManualOverride(appContext);
+            clearUserHold(appContext);
             clearAutoWriteTracking(appContext);
+            clearExternalCandidate(appContext);
             candidatePercent = -1;
             candidateSince = 0L;
-            BrightnessLogManager.appendSnapshot(appContext, "MANUAL_OVERRIDE_RESUMED_BY_LUX_CHANGE", avgLux);
+            BrightnessLogManager.appendSnapshot(appContext, "USER_HOLD_RELEASED_BY_LUX_CHANGE", avgLux);
         }
 
-        if (detectExternalBrightnessChange(now)) {
-            saveMode(appContext, Mode.MANUAL_OVERRIDE);
+        if (detectUserBrightnessChange(now, avgLux)) {
             return;
         }
 
@@ -153,6 +176,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         int currentRaw = BrightnessLevels.getSystemRaw(appContext, raw);
         if (Math.abs(currentRaw - raw) <= RAW_CHANGE_TOLERANCE) {
             saveLastAutoRaw(appContext, raw);
+            beginAppWriteGrace(appContext);
             saveMode(appContext, Mode.PROTECTING);
             BrightnessLogManager.logSnapshotIfChanged(appContext, "PROTECTION_AT_" + percent + "_PERCENT", getLastLux(appContext));
             return;
@@ -161,6 +185,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         boolean ok = BrightnessLevels.applyBrightness(appContext, percent, raw);
         if (ok) {
             saveLastAutoRaw(appContext, raw);
+            beginAppWriteGrace(appContext);
             saveMode(appContext, Mode.PROTECTING);
             BrightnessLogManager.appendSnapshot(appContext, "PROTECTION_APPLIED_" + percent + "_PERCENT_RAW_" + raw, getLastLux(appContext));
         } else {
@@ -174,57 +199,76 @@ public class AutoBrightnessManager implements SensorEventListener {
         }
         if (currentPercent == LEVEL_30) {
             if (lux < 12f) return LEVEL_20;
-            if (lux > 120f) return LEVEL_40;
+            if (lux > 160f) return LEVEL_40;
             return LEVEL_30;
         }
         if (currentPercent == LEVEL_40) {
-            if (lux < 75f) return LEVEL_30;
-            if (lux > 500f) return LEVEL_50;
+            if (lux < 90f) return LEVEL_30;
+            if (lux > 650f) return LEVEL_50;
             return LEVEL_40;
         }
         if (currentPercent == LEVEL_50) {
-            if (lux < 300f) return LEVEL_40;
-            if (lux > 3000f) return LEVEL_60;
+            if (lux < 350f) return LEVEL_40;
+            if (lux > 3500f) return LEVEL_60;
             return LEVEL_50;
         }
-        if (lux < 1800f) return LEVEL_50;
+        if (lux < 2100f) return LEVEL_50;
         return LEVEL_60;
     }
 
-    private boolean detectExternalBrightnessChange(long now) {
+    private boolean detectUserBrightnessChange(long now, float avgLux) {
         int lastAutoRaw = getLastAutoRaw(appContext);
         if (lastAutoRaw < 0) {
             return false;
         }
-        long lastAutoAt = getLastAutoAt(appContext);
-        if (now - lastAutoAt < AUTO_WRITE_GRACE_MS) {
+        if (now < getIgnoreExternalUntil(appContext)) {
             return false;
         }
-        int currentRaw = BrightnessLevels.getSystemRaw(appContext, lastAutoRaw);
-        if (Math.abs(currentRaw - lastAutoRaw) <= RAW_CHANGE_TOLERANCE) {
+        long lastAutoAt = getLastAutoAt(appContext);
+        if (now - lastAutoAt < APP_WRITE_GRACE_MS) {
             return false;
         }
 
-        BrightnessLevels.saveCurrentPercent(appContext, BrightnessLevels.getPercentForRaw(currentRaw));
-        recordManualOverride(appContext);
-        BrightnessLogManager.appendSnapshot(appContext, "EXTERNAL_BRIGHTNESS_CHANGE_DETECTED", getLastLux(appContext));
+        int currentRaw = BrightnessLevels.getSystemRaw(appContext, lastAutoRaw);
+        if (Math.abs(currentRaw - lastAutoRaw) < USER_CHANGE_MIN_RAW) {
+            clearExternalCandidate(appContext);
+            return false;
+        }
+
+        int candidateRaw = getExternalCandidateRaw(appContext);
+        long candidateRawSince = getExternalCandidateSince(appContext);
+        if (candidateRaw != currentRaw) {
+            saveExternalCandidate(appContext, currentRaw, now);
+            saveMode(appContext, Mode.USER_HOLD);
+            BrightnessLogManager.appendSnapshot(appContext, "USER_HOLD_CANDIDATE_RAW_" + currentRaw + "_LAST_AUTO_RAW_" + lastAutoRaw, avgLux);
+            return true;
+        }
+
+        saveMode(appContext, Mode.USER_HOLD);
+        if (now - candidateRawSince < USER_INTENT_STABLE_MS) {
+            BrightnessLogManager.logSnapshotIfChanged(appContext, "USER_HOLD_CANDIDATE_WAITING", avgLux);
+            return true;
+        }
+
+        recordUserHold(appContext, currentRaw, avgLux, "USER_HOLD_CONFIRMED_RAW_" + currentRaw + "_LAST_AUTO_RAW_" + lastAutoRaw);
+        clearExternalCandidate(appContext);
         candidatePercent = -1;
         candidateSince = 0L;
         return true;
     }
 
-    private boolean luxChangedEnough(float currentLux, float manualLux) {
-        if (manualLux < 0f) {
+    private boolean shouldReleaseUserHold(float currentLux, float holdLux) {
+        if (holdLux < 0f) {
             return false;
         }
-        float delta = Math.abs(currentLux - manualLux);
-        if (delta < LUX_CHANGE_MIN) {
+        float delta = Math.abs(currentLux - holdLux);
+        if (delta < USER_HOLD_RELEASE_MIN_LUX) {
             return false;
         }
-        if (manualLux <= 0f) {
-            return true;
+        if (holdLux <= 0f) {
+            return delta >= USER_HOLD_RELEASE_MIN_LUX;
         }
-        return (delta * 100f / manualLux) >= LUX_CHANGE_PCT;
+        return (delta * 100f / holdLux) >= USER_HOLD_RELEASE_PCT;
     }
 
     private float smooth(float lux) {
@@ -254,10 +298,14 @@ public class AutoBrightnessManager implements SensorEventListener {
         SharedPreferences.Editor editor = getPrefs(context).edit()
                 .putBoolean(KEY_AUTO_ENABLED, enabled)
                 .putString(KEY_AUTO_MODE, enabled ? Mode.PROTECTING.name() : Mode.OFF.name())
-                .putLong(KEY_MANUAL_UNTIL, 0L)
-                .putFloat(KEY_MANUAL_LUX, -1f);
+                .putLong(KEY_USER_HOLD_UNTIL, 0L)
+                .putFloat(KEY_USER_HOLD_LUX, -1f)
+                .remove(KEY_EXTERNAL_CANDIDATE_RAW)
+                .remove(KEY_EXTERNAL_CANDIDATE_SINCE);
         if (enabled) {
-            editor.remove(KEY_LAST_AUTO_RAW).remove(KEY_LAST_AUTO_AT);
+            editor.remove(KEY_LAST_AUTO_RAW)
+                    .remove(KEY_LAST_AUTO_AT)
+                    .putLong(KEY_IGNORE_EXTERNAL_UNTIL, System.currentTimeMillis() + APP_WRITE_GRACE_MS);
         }
         editor.apply();
         BrightnessLogManager.appendSnapshot(context, enabled ? "PROTECTION_STATE_ON" : "PROTECTION_STATE_OFF", getLastLux(context));
@@ -268,17 +316,38 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     public static void recordManualOverride(Context context) {
-        float lux = getLastLux(context);
+        recordUserHold(context, BrightnessLevels.getSystemRaw(context, -1), getLastLux(context), "USER_HOLD_RECORDED_COMPAT");
+    }
+
+    public static void recordUserHold(Context context, int raw, String event) {
+        recordUserHold(context, raw, getLastLux(context), event);
+    }
+
+    private static void recordUserHold(Context context, int raw, float lux, String event) {
+        long now = System.currentTimeMillis();
         getPrefs(context).edit()
-                .putLong(KEY_MANUAL_UNTIL, System.currentTimeMillis() + MANUAL_COOLDOWN_MS)
-                .putFloat(KEY_MANUAL_LUX, lux)
-                .putString(KEY_AUTO_MODE, Mode.MANUAL_OVERRIDE.name())
+                .putLong(KEY_USER_HOLD_UNTIL, now + USER_HOLD_MS)
+                .putLong(KEY_USER_HOLD_AT, now)
+                .putFloat(KEY_USER_HOLD_LUX, lux)
+                .putInt(KEY_USER_HOLD_RAW, raw)
+                .putString(KEY_AUTO_MODE, Mode.USER_HOLD.name())
+                .remove(KEY_EXTERNAL_CANDIDATE_RAW)
+                .remove(KEY_EXTERNAL_CANDIDATE_SINCE)
                 .apply();
-        BrightnessLogManager.appendSnapshot(context, "MANUAL_OVERRIDE_RECORDED", lux);
+        BrightnessLevels.saveCurrentPercent(context, BrightnessLevels.getPercentForRaw(raw));
+        BrightnessLogManager.appendSnapshot(context, event, lux);
     }
 
     public static long getCooldownRemainingMs(Context context) {
-        return Math.max(0L, getManualUntil(context) - System.currentTimeMillis());
+        return getUserHoldRemainingMs(context);
+    }
+
+    public static long getUserHoldRemainingMs(Context context) {
+        return Math.max(0L, getUserHoldUntil(context) - System.currentTimeMillis());
+    }
+
+    public static int getUserHoldRaw(Context context) {
+        return getPrefs(context).getInt(KEY_USER_HOLD_RAW, -1);
     }
 
     public static float getLastLux(Context context) {
@@ -296,6 +365,9 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     public static Mode getSavedMode(Context context) {
         String value = getPrefs(context).getString(KEY_AUTO_MODE, Mode.OFF.name());
+        if ("MANUAL_OVERRIDE".equals(value)) {
+            return Mode.USER_HOLD;
+        }
         try {
             return Mode.valueOf(value);
         } catch (Throwable t) {
@@ -313,36 +385,43 @@ public class AutoBrightnessManager implements SensorEventListener {
         boolean enabled = isAutoEnabled(context);
         float lastLux = getLastLux(context);
         Mode mode = getSavedMode(context);
-        long cooldown = getCooldownRemainingMs(context);
+        long hold = getUserHoldRemainingMs(context);
+        int holdRaw = getUserHoldRaw(context);
 
         String luxText = lastLux < 0f ? "unknown" : String.format(Locale.US, "%.1f lx", lastLux);
-        String cooldownText = cooldown > 0L ? (cooldown / 1000L) + "s" : "inactive";
+        String holdText = hold > 0L ? (hold / 1000L) + "s" + (holdRaw >= 0 ? " / raw " + holdRaw : "") : "inactive";
 
         return "Protection: " + (enabled ? "On" : "Off")
                 + "\nLux: " + luxText
                 + "\nMode: " + getDisplayMode(mode)
-                + "\nManual pause: " + cooldownText;
+                + "\nUser hold: " + holdText;
     }
 
     public static String getDisplayMode(Mode mode) {
         if (mode == Mode.PROTECTING) return "Protecting";
-        if (mode == Mode.MANUAL_OVERRIDE) return "Manual Override";
+        if (mode == Mode.USER_HOLD) return "Holding your brightness";
         if (mode == Mode.UNAVAILABLE) return "Unavailable";
         return "Off";
     }
 
-    private static long getManualUntil(Context context) {
-        return getPrefs(context).getLong(KEY_MANUAL_UNTIL, 0L);
+    private static boolean isUserHoldActive(Context context, long now) {
+        return getUserHoldUntil(context) > now;
     }
 
-    private static float getManualLux(Context context) {
-        return getPrefs(context).getFloat(KEY_MANUAL_LUX, -1f);
+    private static long getUserHoldUntil(Context context) {
+        return getPrefs(context).getLong(KEY_USER_HOLD_UNTIL, 0L);
     }
 
-    private static void clearManualOverride(Context context) {
+    private static float getUserHoldLux(Context context) {
+        return getPrefs(context).getFloat(KEY_USER_HOLD_LUX, -1f);
+    }
+
+    private static void clearUserHold(Context context) {
         getPrefs(context).edit()
-                .putLong(KEY_MANUAL_UNTIL, 0L)
-                .putFloat(KEY_MANUAL_LUX, -1f)
+                .putLong(KEY_USER_HOLD_UNTIL, 0L)
+                .putFloat(KEY_USER_HOLD_LUX, -1f)
+                .remove(KEY_USER_HOLD_RAW)
+                .remove(KEY_USER_HOLD_AT)
                 .apply();
     }
 
@@ -352,6 +431,14 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     private static long getLastAutoAt(Context context) {
         return getPrefs(context).getLong(KEY_LAST_AUTO_AT, 0L);
+    }
+
+    private static long getIgnoreExternalUntil(Context context) {
+        return getPrefs(context).getLong(KEY_IGNORE_EXTERNAL_UNTIL, 0L);
+    }
+
+    private static void beginAppWriteGrace(Context context) {
+        getPrefs(context).edit().putLong(KEY_IGNORE_EXTERNAL_UNTIL, System.currentTimeMillis() + APP_WRITE_GRACE_MS).apply();
     }
 
     private static void clearAutoWriteTracking(Context context) {
@@ -365,6 +452,28 @@ public class AutoBrightnessManager implements SensorEventListener {
         getPrefs(context).edit()
                 .putInt(KEY_LAST_AUTO_RAW, raw)
                 .putLong(KEY_LAST_AUTO_AT, System.currentTimeMillis())
+                .apply();
+    }
+
+    private static int getExternalCandidateRaw(Context context) {
+        return getPrefs(context).getInt(KEY_EXTERNAL_CANDIDATE_RAW, -1);
+    }
+
+    private static long getExternalCandidateSince(Context context) {
+        return getPrefs(context).getLong(KEY_EXTERNAL_CANDIDATE_SINCE, 0L);
+    }
+
+    private static void saveExternalCandidate(Context context, int raw, long since) {
+        getPrefs(context).edit()
+                .putInt(KEY_EXTERNAL_CANDIDATE_RAW, raw)
+                .putLong(KEY_EXTERNAL_CANDIDATE_SINCE, since)
+                .apply();
+    }
+
+    private static void clearExternalCandidate(Context context) {
+        getPrefs(context).edit()
+                .remove(KEY_EXTERNAL_CANDIDATE_RAW)
+                .remove(KEY_EXTERNAL_CANDIDATE_SINCE)
                 .apply();
     }
 
