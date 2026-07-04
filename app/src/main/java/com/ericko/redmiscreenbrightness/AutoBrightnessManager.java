@@ -85,6 +85,13 @@ public class AutoBrightnessManager implements SensorEventListener {
         registered = false;
     }
 
+    public void evaluateLastLux(String event) {
+        float lux = getLastLux(appContext);
+        if (lux >= 0f) {
+            evaluateLux(lux, event);
+        }
+    }
+
     @Override
     public void onSensorChanged(SensorEvent event) {
         if (event == null || event.sensor == null || event.sensor.getType() != Sensor.TYPE_LIGHT || event.values.length == 0) {
@@ -94,7 +101,14 @@ public class AutoBrightnessManager implements SensorEventListener {
         float avgLux = smooth(clampLux(event.values[0]));
         saveLastLux(appContext, avgLux);
         BrightnessLogManager.logSnapshotIfChanged(appContext, "REDMI_SENSOR_SAMPLE", avgLux);
+        evaluateLux(avgLux, "REDMI_SENSOR_SAMPLE");
+    }
 
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {
+    }
+
+    private void evaluateLux(float avgLux, String event) {
         long now = System.currentTimeMillis();
         if (getManualUntil(appContext) > now) {
             saveMode(appContext, Mode.MANUAL_OVERRIDE);
@@ -112,7 +126,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         if (candidatePercent != targetPercent) {
             candidatePercent = targetPercent;
             candidateSince = now;
-            BrightnessLogManager.logSnapshotIfChanged(appContext, "REDMI_TARGET_CANDIDATE_" + targetPercent + "_PERCENT", avgLux);
+            BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_TARGET_" + targetPercent + "_PERCENT", avgLux);
             return;
         }
         if (now - candidateSince < STABLE_MS) {
@@ -122,12 +136,8 @@ public class AutoBrightnessManager implements SensorEventListener {
         applyAutoPercent(targetPercent, getModeForPercent(targetPercent));
     }
 
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {
-    }
-
     private void applyAutoPercent(int percent, Mode mode) {
-        int raw = BrightnessLevels.getRawForPercent(percent);
+        int raw = BrightnessLevels.getRawForPercent(appContext, percent);
         if (BrightnessLevels.getCurrentPercent(appContext) == percent && getSavedMode(appContext) == mode) {
             saveLastAutoRaw(appContext, raw);
             BrightnessLogManager.logSnapshotIfChanged(appContext, "REDMI_AUTO_ALREADY_" + percent + "_PERCENT", getLastLux(appContext));
@@ -188,7 +198,7 @@ public class AutoBrightnessManager implements SensorEventListener {
             return false;
         }
 
-        BrightnessLevels.saveCurrentPercent(appContext, BrightnessLevels.getPercentForRaw(currentRaw));
+        BrightnessLevels.saveCurrentPercent(appContext, BrightnessLevels.getPercentForRaw(appContext, currentRaw));
         recordManualOverride(appContext);
         BrightnessLogManager.appendSnapshot(appContext, "EXTERNAL_BRIGHTNESS_CHANGE_DETECTED", getLastLux(appContext));
         candidatePercent = -1;
@@ -280,13 +290,16 @@ public class AutoBrightnessManager implements SensorEventListener {
         float lastLux = getLastLux(context);
         Mode mode = getSavedMode(context);
         long cooldown = getCooldownRemainingMs(context);
+        int masterAdjust = BrightnessLevels.getMasterAdjust(context);
 
         String luxText = lastLux < 0f ? "unknown" : String.format(Locale.US, "%.1f lx", lastLux);
         String cooldownText = cooldown > 0L ? (cooldown / 1000L) + "s" : "inactive";
+        String adjustText = masterAdjust > 0 ? "+" + masterAdjust : String.valueOf(masterAdjust);
 
         return "Auto Brightness: " + (enabled ? "On" : "Off")
                 + "\nLux: " + luxText
                 + "\nMode: " + getDisplayMode(mode)
+                + "\nMaster adjust: " + adjustText + " raw"
                 + "\nManual cooldown: " + cooldownText;
     }
 
