@@ -15,6 +15,8 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final String KEY_LAST_LUX = "auto_brightness_last_lux";
     private static final String KEY_SENSOR_AVAILABLE = "auto_brightness_sensor_available";
     private static final String KEY_MANUAL_UNTIL = "auto_brightness_manual_until";
+    private static final String KEY_LAST_AUTO_RAW = "auto_brightness_last_auto_raw";
+    private static final String KEY_LAST_AUTO_AT = "auto_brightness_last_auto_at";
 
     private static final int DARK_PERCENT = 20;
     private static final int NORMAL_PERCENT = 30;
@@ -25,6 +27,8 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final float MAX_LUX = 120000f;
     private static final int SAMPLE_COUNT = 5;
     private static final long STABLE_MS = 3000L;
+    private static final int RAW_CHANGE_TOLERANCE = 2;
+    private static final long AUTO_WRITE_GRACE_MS = 4000L;
     public static final long MANUAL_COOLDOWN_MS = 120000L;
 
     public enum Mode {
@@ -85,6 +89,11 @@ public class AutoBrightnessManager implements SensorEventListener {
             return;
         }
 
+        if (detectExternalBrightnessChange(now)) {
+            saveMode(appContext, Mode.MANUAL_OVERRIDE);
+            return;
+        }
+
         Mode previous = getSavedMode(appContext);
         Mode next = classify(avgLux, previous);
         if (candidate != next) {
@@ -118,13 +127,39 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     private void applyAutoPercent(int percent, Mode mode) {
+        int raw = BrightnessLevels.getRawForPercent(percent);
         if (BrightnessLevels.getCurrentPercent(appContext) == percent && getSavedMode(appContext) == mode) {
+            saveLastAutoRaw(appContext, raw);
             return;
         }
-        boolean ok = BrightnessLevels.applyBrightness(appContext, percent);
+        boolean ok = BrightnessLevels.applyBrightness(appContext, percent, raw);
+        if (ok) {
+            saveLastAutoRaw(appContext, raw);
+        }
         if (ok || getSavedMode(appContext) != mode) {
             saveMode(appContext, mode);
         }
+    }
+
+    private boolean detectExternalBrightnessChange(long now) {
+        int lastAutoRaw = getLastAutoRaw(appContext);
+        if (lastAutoRaw < 0) {
+            return false;
+        }
+        long lastAutoAt = getLastAutoAt(appContext);
+        if (now - lastAutoAt < AUTO_WRITE_GRACE_MS) {
+            return false;
+        }
+        int currentRaw = BrightnessLevels.getSystemRaw(appContext, lastAutoRaw);
+        if (Math.abs(currentRaw - lastAutoRaw) <= RAW_CHANGE_TOLERANCE) {
+            return false;
+        }
+
+        BrightnessLevels.saveCurrentPercent(appContext, BrightnessLevels.getPercentForRaw(currentRaw));
+        recordManualOverride(appContext);
+        candidate = null;
+        candidateSince = 0L;
+        return true;
     }
 
     private Mode classify(float lux, Mode mode) {
@@ -163,10 +198,14 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     public static void setAutoEnabled(Context context, boolean enabled) {
-        getPrefs(context).edit()
+        SharedPreferences.Editor editor = getPrefs(context).edit()
                 .putBoolean(KEY_AUTO_ENABLED, enabled)
                 .putString(KEY_AUTO_MODE, enabled ? Mode.NORMAL_LOCKED.name() : Mode.OFF.name())
-                .apply();
+                .putLong(KEY_MANUAL_UNTIL, 0L);
+        if (enabled) {
+            editor.remove(KEY_LAST_AUTO_RAW).remove(KEY_LAST_AUTO_AT);
+        }
+        editor.apply();
     }
 
     public static boolean isAutoEnabled(Context context) {
@@ -237,6 +276,21 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     private static long getManualUntil(Context context) {
         return getPrefs(context).getLong(KEY_MANUAL_UNTIL, 0L);
+    }
+
+    private static int getLastAutoRaw(Context context) {
+        return getPrefs(context).getInt(KEY_LAST_AUTO_RAW, -1);
+    }
+
+    private static long getLastAutoAt(Context context) {
+        return getPrefs(context).getLong(KEY_LAST_AUTO_AT, 0L);
+    }
+
+    private static void saveLastAutoRaw(Context context, int raw) {
+        getPrefs(context).edit()
+                .putInt(KEY_LAST_AUTO_RAW, raw)
+                .putLong(KEY_LAST_AUTO_AT, System.currentTimeMillis())
+                .apply();
     }
 
     private static void saveMode(Context context, Mode mode) {
