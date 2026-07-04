@@ -24,6 +24,14 @@ public final class BrightnessLevels {
     }
 
     public static int getCurrentPercent(Context context) {
+        int savedPercent = getSavedPercent(context);
+        int raw = getSystemRaw(context, getRawForPercent(savedPercent));
+        int percent = getPercentForRaw(raw);
+        saveCurrentPercent(context, percent);
+        return percent;
+    }
+
+    public static int getSavedPercent(Context context) {
         SharedPreferences prefs = context.getApplicationContext()
                 .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         return prefs.getInt(KEY_PERCENT, getMaxPercent());
@@ -52,6 +60,30 @@ public final class BrightnessLevels {
         return RAW_VALUES[0];
     }
 
+    public static int getPercentForRaw(int raw) {
+        int bestIndex = 0;
+        int bestDistance = Math.abs(raw - RAW_VALUES[0]);
+        for (int i = 1; i < RAW_VALUES.length; i++) {
+            int distance = Math.abs(raw - RAW_VALUES[i]);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = i;
+            }
+        }
+        return PERCENTS[bestIndex];
+    }
+
+    public static int getSystemRaw(Context context, int fallbackRaw) {
+        try {
+            return Settings.System.getInt(
+                    context.getContentResolver(),
+                    Settings.System.SCREEN_BRIGHTNESS
+            );
+        } catch (Throwable t) {
+            return fallbackRaw;
+        }
+    }
+
     public static int getMaxPercent() {
         return PERCENTS[PERCENTS.length - 1];
     }
@@ -65,16 +97,30 @@ public final class BrightnessLevels {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.System.canWrite(context)) {
                 return false;
             }
-            Settings.System.putInt(
+
+            int currentRaw = getSystemRaw(context, -1);
+            int currentMode = Settings.System.getInt(
                     context.getContentResolver(),
                     Settings.System.SCREEN_BRIGHTNESS_MODE,
                     Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
             );
-            Settings.System.putInt(
-                    context.getContentResolver(),
-                    Settings.System.SCREEN_BRIGHTNESS,
-                    raw
-            );
+
+            if (currentMode != Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL) {
+                Settings.System.putInt(
+                        context.getContentResolver(),
+                        Settings.System.SCREEN_BRIGHTNESS_MODE,
+                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                );
+            }
+
+            if (currentRaw != raw) {
+                Settings.System.putInt(
+                        context.getContentResolver(),
+                        Settings.System.SCREEN_BRIGHTNESS,
+                        raw
+                );
+            }
+
             saveCurrentPercent(context, percent);
             return true;
         } catch (Throwable t) {
