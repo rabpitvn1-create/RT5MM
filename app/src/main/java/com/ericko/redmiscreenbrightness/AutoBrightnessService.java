@@ -44,7 +44,7 @@ public class AutoBrightnessService extends Service {
                 if (manager == null) {
                     manager = new AutoBrightnessManager(AutoBrightnessService.this);
                 }
-                manager.resumeProtection(Intent.ACTION_USER_PRESENT.equals(action) ? "PROTECTION_USER_PRESENT" : "PROTECTION_SCREEN_ON");
+                manager.onScreenWake(Intent.ACTION_USER_PRESENT.equals(action) ? "PROTECTION_USER_PRESENT" : "PROTECTION_SCREEN_ON");
                 updateNotification(true);
                 scheduleProtectionUpdates();
             }
@@ -111,7 +111,7 @@ public class AutoBrightnessService extends Service {
         scheduleProtectionUpdates();
 
         if (ACTION_REFRESH.equals(action)) {
-            manager.resumeProtection("PROTECTION_REFRESH_REQUEST");
+            manager.evaluateLastLux("PROTECTION_REFRESH_REQUEST");
             updateNotification(true);
         }
 
@@ -184,17 +184,18 @@ public class AutoBrightnessService extends Service {
         int percent = BrightnessLevels.getCurrentPercent(this);
         int raw = BrightnessLevels.getSystemRaw(this, BrightnessLevels.getRawForPercent(percent));
         float lux = AutoBrightnessManager.getLastLux(this);
-        long cooldownMs = AutoBrightnessManager.getCooldownRemainingMs(this);
+        long holdMs = AutoBrightnessManager.getUserHoldRemainingMs(this);
+        int holdRaw = AutoBrightnessManager.getUserHoldRaw(this);
 
         String luxText = formatLux(lux);
         String modeText = AutoBrightnessManager.getDisplayMode(mode);
-        String cooldownText = cooldownMs > 0L ? "Manual pause: " + (cooldownMs / 1000L) + "s" : "Manual pause: inactive";
+        String holdText = holdMs > 0L ? "Holding: " + (holdMs / 1000L) + "s" + (holdRaw >= 0 ? " / raw " + holdRaw : "") : "Holding: inactive";
         String contentText = "Lux: " + luxText + " · Raw: " + raw + " · " + modeText;
         String bigText = "Screen Protection đang bật"
                 + "\nLux hiện tại: " + luxText
                 + "\nBrightness: " + percent + "% / raw " + raw
                 + "\nMode: " + modeText
-                + "\n" + cooldownText;
+                + "\n" + holdText;
 
         Notification.Builder builder;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -220,10 +221,10 @@ public class AutoBrightnessService extends Service {
     private String buildNotificationSignature() {
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
         int percent = BrightnessLevels.getCurrentPercent(this);
-        long cooldownBucket = AutoBrightnessManager.getCooldownRemainingMs(this) / 1000L;
+        long holdBucket = AutoBrightnessManager.getUserHoldRemainingMs(this) / 1000L;
         float lux = AutoBrightnessManager.getLastLux(this);
         int raw = BrightnessLevels.getSystemRaw(this, -1);
-        return mode.name() + "|" + percent + "|" + raw + "|" + Math.round(lux) + "|" + cooldownBucket;
+        return mode.name() + "|" + percent + "|" + raw + "|" + Math.round(lux) + "|" + holdBucket;
     }
 
     private void scheduleNotificationRefresh() {
