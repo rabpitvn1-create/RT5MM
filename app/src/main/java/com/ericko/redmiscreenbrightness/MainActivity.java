@@ -122,7 +122,17 @@ public class MainActivity extends Activity {
             return;
         }
 
-        if (AutoBrightnessManager.isAutoEnabled(this)) {
+        boolean enabled = AutoBrightnessManager.isAutoEnabled(this);
+        AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
+        if (enabled && mode == AutoBrightnessManager.Mode.MANUAL_OVERRIDE) {
+            AutoBrightnessService.refresh(this);
+            BrightnessLogManager.appendSnapshot(this, "PROTECTION_RESTART_FROM_BUTTON", AutoBrightnessManager.getLastLux(this));
+            Toast.makeText(this, "Screen Protection restarted", Toast.LENGTH_SHORT).show();
+            refreshStatus();
+            return;
+        }
+
+        if (enabled) {
             AutoBrightnessService.stop(this);
             BrightnessLogManager.appendSnapshot(this, "PROTECTION_DISABLED", AutoBrightnessManager.getLastLux(this));
             Toast.makeText(this, "Screen Protection off", Toast.LENGTH_SHORT).show();
@@ -166,6 +176,7 @@ public class MainActivity extends Activity {
     private void refreshStatus() {
         boolean canWrite = Settings.System.canWrite(this);
         boolean enabled = AutoBrightnessManager.isAutoEnabled(this);
+        AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
         int currentRaw = BrightnessLevels.getSystemRaw(this, -1);
         int percent = BrightnessLevels.getCurrentPercent(this);
         String notificationStatus = getNotificationPermissionStatus();
@@ -173,6 +184,8 @@ public class MainActivity extends Activity {
 
         if (!canWrite) {
             toggleButton.setText("Grant Permission");
+        } else if (enabled && mode == AutoBrightnessManager.Mode.MANUAL_OVERRIDE) {
+            toggleButton.setText("Restart Protection");
         } else {
             toggleButton.setText(enabled ? "Turn Protection Off" : "Turn Protection On");
         }
