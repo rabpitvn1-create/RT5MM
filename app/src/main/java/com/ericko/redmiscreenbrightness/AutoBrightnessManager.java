@@ -20,13 +20,22 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     private static final int DARK_PERCENT = 20;
     private static final int NORMAL_PERCENT = 30;
-    private static final float DARK_ENTER_LUX = 20f;
-    private static final float DARK_EXIT_LUX = 40f;
-    private static final float BRIGHT_ENTER_LUX = 10000f;
-    private static final float BRIGHT_EXIT_LUX = 7000f;
+    private static final int INDOOR_PERCENT = 40;
+    private static final int OUTDOOR_PERCENT = 50;
+    private static final int BRIGHT_PERCENT = 60;
+
+    private static final float DARK_TO_NORMAL_LUX = 35f;
+    private static final float NORMAL_TO_DARK_LUX = 18f;
+    private static final float NORMAL_TO_INDOOR_LUX = 160f;
+    private static final float INDOOR_TO_NORMAL_LUX = 90f;
+    private static final float INDOOR_TO_OUTDOOR_LUX = 900f;
+    private static final float OUTDOOR_TO_INDOOR_LUX = 500f;
+    private static final float OUTDOOR_TO_BRIGHT_LUX = 8000f;
+    private static final float BRIGHT_TO_OUTDOOR_LUX = 5000f;
+
     private static final float MAX_LUX = 120000f;
     private static final int SAMPLE_COUNT = 5;
-    private static final long STABLE_MS = 3000L;
+    private static final long STABLE_MS = 2500L;
     private static final int RAW_CHANGE_TOLERANCE = 2;
     private static final long AUTO_WRITE_GRACE_MS = 4000L;
     public static final long MANUAL_COOLDOWN_MS = 120000L;
@@ -42,7 +51,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     private int sampleCount = 0;
     private int sampleIndex = 0;
     private boolean registered = false;
-    private Mode candidate = null;
+    private int candidatePercent = -1;
     private long candidateSince = 0L;
 
     public AutoBrightnessManager(Context context) {
@@ -98,39 +107,23 @@ public class AutoBrightnessManager implements SensorEventListener {
             return;
         }
 
-        Mode previous = getSavedMode(appContext);
-        Mode next = classify(avgLux, previous);
-        if (candidate != next) {
-            candidate = next;
+        int currentPercent = BrightnessLevels.getCurrentPercent(appContext);
+        int targetPercent = getTargetPercent(avgLux, currentPercent);
+        if (candidatePercent != targetPercent) {
+            candidatePercent = targetPercent;
             candidateSince = now;
-            BrightnessLogManager.logSnapshotIfChanged(appContext, "REDMI_MODE_CANDIDATE_" + next.name(), avgLux);
+            BrightnessLogManager.logSnapshotIfChanged(appContext, "REDMI_TARGET_CANDIDATE_" + targetPercent + "_PERCENT", avgLux);
             return;
         }
         if (now - candidateSince < STABLE_MS) {
             return;
         }
 
-        applyStableMode(next, previous);
+        applyAutoPercent(targetPercent, getModeForPercent(targetPercent));
     }
 
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
-    }
-
-    private void applyStableMode(Mode next, Mode previous) {
-        if (next == Mode.DARK) {
-            applyAutoPercent(DARK_PERCENT, Mode.DARK);
-        } else if (next == Mode.BRIGHT) {
-            applyAutoPercent(BrightnessLevels.getMaxPercent(), Mode.BRIGHT);
-        } else {
-            boolean returnedFromExtreme = previous == Mode.DARK || previous == Mode.BRIGHT;
-            saveMode(appContext, Mode.NORMAL_LOCKED);
-            if (returnedFromExtreme) {
-                applyAutoPercent(NORMAL_PERCENT, Mode.NORMAL_LOCKED);
-            } else {
-                BrightnessLogManager.logSnapshotIfChanged(appContext, "REDMI_MODE_NORMAL_LOCKED", getLastLux(appContext));
-            }
-        }
     }
 
     private void applyAutoPercent(int percent, Mode mode) {
@@ -152,6 +145,35 @@ public class AutoBrightnessManager implements SensorEventListener {
         }
     }
 
+    private int getTargetPercent(float lux, int currentPercent) {
+        if (currentPercent <= DARK_PERCENT) {
+            return lux > DARK_TO_NORMAL_LUX ? NORMAL_PERCENT : DARK_PERCENT;
+        }
+        if (currentPercent == NORMAL_PERCENT) {
+            if (lux < NORMAL_TO_DARK_LUX) return DARK_PERCENT;
+            if (lux > NORMAL_TO_INDOOR_LUX) return INDOOR_PERCENT;
+            return NORMAL_PERCENT;
+        }
+        if (currentPercent == INDOOR_PERCENT) {
+            if (lux < INDOOR_TO_NORMAL_LUX) return NORMAL_PERCENT;
+            if (lux > INDOOR_TO_OUTDOOR_LUX) return OUTDOOR_PERCENT;
+            return INDOOR_PERCENT;
+        }
+        if (currentPercent == OUTDOOR_PERCENT) {
+            if (lux < OUTDOOR_TO_INDOOR_LUX) return INDOOR_PERCENT;
+            if (lux > OUTDOOR_TO_BRIGHT_LUX) return BRIGHT_PERCENT;
+            return OUTDOOR_PERCENT;
+        }
+        if (lux < BRIGHT_TO_OUTDOOR_LUX) return OUTDOOR_PERCENT;
+        return BRIGHT_PERCENT;
+    }
+
+    private Mode getModeForPercent(int percent) {
+        if (percent == DARK_PERCENT) return Mode.DARK;
+        if (percent == BRIGHT_PERCENT) return Mode.BRIGHT;
+        return Mode.NORMAL_LOCKED;
+    }
+
     private boolean detectExternalBrightnessChange(long now) {
         int lastAutoRaw = getLastAutoRaw(appContext);
         if (lastAutoRaw < 0) {
@@ -169,21 +191,9 @@ public class AutoBrightnessManager implements SensorEventListener {
         BrightnessLevels.saveCurrentPercent(appContext, BrightnessLevels.getPercentForRaw(currentRaw));
         recordManualOverride(appContext);
         BrightnessLogManager.appendSnapshot(appContext, "EXTERNAL_BRIGHTNESS_CHANGE_DETECTED", getLastLux(appContext));
-        candidate = null;
+        candidatePercent = -1;
         candidateSince = 0L;
         return true;
-    }
-
-    private Mode classify(float lux, Mode mode) {
-        if (mode == Mode.DARK) {
-            return lux < DARK_EXIT_LUX ? Mode.DARK : Mode.NORMAL_LOCKED;
-        }
-        if (mode == Mode.BRIGHT) {
-            return lux > BRIGHT_EXIT_LUX ? Mode.BRIGHT : Mode.NORMAL_LOCKED;
-        }
-        if (lux <= DARK_ENTER_LUX) return Mode.DARK;
-        if (lux >= BRIGHT_ENTER_LUX) return Mode.BRIGHT;
-        return Mode.NORMAL_LOCKED;
     }
 
     private float smooth(float lux) {
