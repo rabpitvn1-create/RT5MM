@@ -16,14 +16,14 @@ import android.os.Looper;
 import java.util.Locale;
 
 public class AutoBrightnessService extends Service {
-    private static final String ACTION_START = "com.ericko.redmiscreenbrightness.AUTO_BRIGHTNESS_START";
-    private static final String ACTION_STOP = "com.ericko.redmiscreenbrightness.AUTO_BRIGHTNESS_STOP";
-    private static final String ACTION_REFRESH = "com.ericko.redmiscreenbrightness.AUTO_BRIGHTNESS_REFRESH";
-    private static final String CHANNEL_ID = "auto_brightness_channel";
-    private static final String CHANNEL_NAME = "Auto Brightness";
+    private static final String ACTION_START = "com.ericko.redmiscreenbrightness.PROTECTION_START";
+    private static final String ACTION_STOP = "com.ericko.redmiscreenbrightness.PROTECTION_STOP";
+    private static final String ACTION_REFRESH = "com.ericko.redmiscreenbrightness.PROTECTION_REFRESH";
+    private static final String CHANNEL_ID = "screen_protection_channel";
+    private static final String CHANNEL_NAME = "Screen Protection";
     private static final int NOTIFICATION_ID = 3001;
     private static final long NOTIFICATION_REFRESH_MS = 30000L;
-    private static final long AUTO_UPDATE_MS = 1000L;
+    private static final long PROTECTION_UPDATE_MS = 5000L;
 
     private AutoBrightnessManager manager;
     private Handler handler;
@@ -40,17 +40,17 @@ public class AutoBrightnessService extends Service {
         }
     };
 
-    private final Runnable autoUpdateRunnable = new Runnable() {
+    private final Runnable protectionUpdateRunnable = new Runnable() {
         @Override
         public void run() {
             if (handler == null || !AutoBrightnessManager.isAutoEnabled(AutoBrightnessService.this)) {
                 return;
             }
             if (manager != null) {
-                manager.evaluateLastLux("REDMI_INTERVAL_TICK");
+                manager.evaluateLastLux("PROTECTION_INTERVAL_TICK");
             }
             updateNotification(false);
-            handler.postDelayed(this, AUTO_UPDATE_MS);
+            handler.postDelayed(this, PROTECTION_UPDATE_MS);
         }
     };
 
@@ -86,10 +86,10 @@ public class AutoBrightnessService extends Service {
         }
         manager.start();
         scheduleNotificationRefresh();
-        scheduleAutoUpdates();
+        scheduleProtectionUpdates();
 
         if (ACTION_REFRESH.equals(action)) {
-            manager.evaluateLastLux("REDMI_REFRESH_REQUEST");
+            manager.evaluateLastLux("PROTECTION_REFRESH_REQUEST");
             updateNotification(true);
         }
 
@@ -100,7 +100,7 @@ public class AutoBrightnessService extends Service {
     public void onDestroy() {
         if (handler != null) {
             handler.removeCallbacks(notificationRefreshRunnable);
-            handler.removeCallbacks(autoUpdateRunnable);
+            handler.removeCallbacks(protectionUpdateRunnable);
         }
         if (manager != null) {
             manager.stop();
@@ -159,21 +159,18 @@ public class AutoBrightnessService extends Service {
 
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
         int percent = BrightnessLevels.getCurrentPercent(this);
-        int raw = BrightnessLevels.getSystemRaw(this, BrightnessLevels.getRawForPercent(this, percent));
+        int raw = BrightnessLevels.getSystemRaw(this, BrightnessLevels.getRawForPercent(percent));
         float lux = AutoBrightnessManager.getLastLux(this);
         long cooldownMs = AutoBrightnessManager.getCooldownRemainingMs(this);
-        int adjust = BrightnessLevels.getMasterAdjust(this);
 
         String luxText = formatLux(lux);
-        String modeText = mode.name();
-        String adjustText = adjust > 0 ? "+" + adjust : String.valueOf(adjust);
-        String cooldownText = cooldownMs > 0L ? "Manual override: " + (cooldownMs / 1000L) + "s" : "Manual override: inactive";
-        String contentText = "Lux: " + luxText + " · Mode: " + modeText + " · Raw: " + raw;
-        String bigText = "Auto Brightness đang chạy"
+        String modeText = AutoBrightnessManager.getDisplayMode(mode);
+        String cooldownText = cooldownMs > 0L ? "Manual pause: " + (cooldownMs / 1000L) + "s" : "Manual pause: inactive";
+        String contentText = "Lux: " + luxText + " · Raw: " + raw + " · " + modeText;
+        String bigText = "Screen Protection đang bật"
                 + "\nLux hiện tại: " + luxText
-                + "\nMode hiện tại: " + modeText
-                + "\nBrightness hiện tại: " + percent + "% / raw " + raw
-                + "\nMaster adjust: " + adjustText + " raw"
+                + "\nBrightness: " + percent + "% / raw " + raw
+                + "\nMode: " + modeText
                 + "\n" + cooldownText;
 
         Notification.Builder builder;
@@ -185,7 +182,7 @@ public class AutoBrightnessService extends Service {
 
         return builder
                 .setSmallIcon(R.drawable.ic_tile_30)
-                .setContentTitle("Auto Brightness đang chạy")
+                .setContentTitle("Screen Protection đang bật")
                 .setContentText(contentText)
                 .setStyle(new Notification.BigTextStyle().bigText(bigText))
                 .setContentIntent(pendingIntent)
@@ -202,9 +199,8 @@ public class AutoBrightnessService extends Service {
         int percent = BrightnessLevels.getCurrentPercent(this);
         long cooldownBucket = AutoBrightnessManager.getCooldownRemainingMs(this) / 1000L;
         float lux = AutoBrightnessManager.getLastLux(this);
-        int adjust = BrightnessLevels.getMasterAdjust(this);
         int raw = BrightnessLevels.getSystemRaw(this, -1);
-        return mode.name() + "|" + percent + "|" + raw + "|" + Math.round(lux) + "|" + cooldownBucket + "|" + adjust;
+        return mode.name() + "|" + percent + "|" + raw + "|" + Math.round(lux) + "|" + cooldownBucket;
     }
 
     private void scheduleNotificationRefresh() {
@@ -215,18 +211,18 @@ public class AutoBrightnessService extends Service {
         handler.postDelayed(notificationRefreshRunnable, NOTIFICATION_REFRESH_MS);
     }
 
-    private void scheduleAutoUpdates() {
+    private void scheduleProtectionUpdates() {
         if (handler == null) {
             handler = new Handler(Looper.getMainLooper());
         }
-        handler.removeCallbacks(autoUpdateRunnable);
-        handler.postDelayed(autoUpdateRunnable, AUTO_UPDATE_MS);
+        handler.removeCallbacks(protectionUpdateRunnable);
+        handler.postDelayed(protectionUpdateRunnable, PROTECTION_UPDATE_MS);
     }
 
     private void shutdownAndStop() {
         if (handler != null) {
             handler.removeCallbacks(notificationRefreshRunnable);
-            handler.removeCallbacks(autoUpdateRunnable);
+            handler.removeCallbacks(protectionUpdateRunnable);
         }
         if (manager != null) {
             manager.stop();
@@ -257,7 +253,7 @@ public class AutoBrightnessService extends Service {
                 CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_LOW
         );
-        channel.setDescription("Keeps Auto Brightness running while enabled.");
+        channel.setDescription("Keeps screen protection active while enabled.");
         channel.setShowBadge(false);
         NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (notificationManager != null) {
