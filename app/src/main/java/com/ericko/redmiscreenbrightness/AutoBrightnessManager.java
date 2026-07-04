@@ -79,6 +79,16 @@ public class AutoBrightnessManager implements SensorEventListener {
         registered = false;
     }
 
+    public void resumeProtection(String event) {
+        clearManualOverride(appContext);
+        clearAutoWriteTracking(appContext);
+        saveMode(appContext, Mode.PROTECTING);
+        candidatePercent = -1;
+        candidateSince = 0L;
+        BrightnessLogManager.appendSnapshot(appContext, event, getLastLux(appContext));
+        evaluateLastLux(event);
+    }
+
     public void evaluateLastLux(String event) {
         float lux = getLastLux(appContext);
         if (lux >= 0f) {
@@ -112,6 +122,7 @@ public class AutoBrightnessManager implements SensorEventListener {
                 return;
             }
             clearManualOverride(appContext);
+            clearAutoWriteTracking(appContext);
             candidatePercent = -1;
             candidateSince = 0L;
             BrightnessLogManager.appendSnapshot(appContext, "MANUAL_OVERRIDE_RESUMED_BY_LUX_CHANGE", avgLux);
@@ -341,6 +352,13 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     private static long getLastAutoAt(Context context) {
         return getPrefs(context).getLong(KEY_LAST_AUTO_AT, 0L);
+    }
+
+    private static void clearAutoWriteTracking(Context context) {
+        getPrefs(context).edit()
+                .remove(KEY_LAST_AUTO_RAW)
+                .remove(KEY_LAST_AUTO_AT)
+                .apply();
     }
 
     private static void saveLastAutoRaw(Context context, int raw) {
