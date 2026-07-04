@@ -45,12 +45,15 @@ public final class BrightnessLogManager {
     public static String exportText(Context context) {
         appendSnapshot(context, "EXPORT_LOG", AutoBrightnessManager.getLastLux(context));
         String log = getPrefs(context).getString(KEY_LOG, "");
+        int masterAdjust = BrightnessLevels.getMasterAdjust(context);
+        String adjustText = masterAdjust > 0 ? "+" + masterAdjust : String.valueOf(masterAdjust);
         return "Redmi Screen Brightness diagnostic log\n"
                 + "Device mode: " + getSystemModeText(context) + "\n"
                 + "App auto: " + (AutoBrightnessManager.isAutoEnabled(context) ? "on" : "off") + "\n"
                 + "App mode: " + AutoBrightnessManager.getDisplayMode(AutoBrightnessManager.getSavedMode(context)) + "\n"
                 + "Current raw: " + BrightnessLevels.getSystemRaw(context, -1) + "\n"
                 + "Current bucket: " + BrightnessLevels.getCurrentPercent(context) + "%\n"
+                + "Master adjust: " + adjustText + " raw\n"
                 + "Last lux: " + formatLux(AutoBrightnessManager.getLastLux(context)) + "\n\n"
                 + "Events:\n"
                 + (log.length() == 0 ? "No events yet.\n" : log);
@@ -69,12 +72,14 @@ public final class BrightnessLogManager {
         AutoBrightnessManager.Mode appMode = AutoBrightnessManager.getSavedMode(context);
         boolean appAuto = AutoBrightnessManager.isAutoEnabled(context);
         int luxBucket = lux < 0f ? -1 : Math.round(lux / 5f) * 5;
-        return event + "|" + mode + "|" + raw + "|" + appAuto + "|" + appMode.name() + "|" + luxBucket;
+        int masterAdjust = BrightnessLevels.getMasterAdjust(context);
+        return event + "|" + mode + "|" + raw + "|" + appAuto + "|" + appMode.name() + "|" + luxBucket + "|" + masterAdjust;
     }
 
     private static String buildEntry(Context context, String event, float lux) {
         int raw = BrightnessLevels.getSystemRaw(context, -1);
-        int percent = BrightnessLevels.getPercentForRaw(raw);
+        int percent = BrightnessLevels.getPercentForRaw(context, raw);
+        int masterAdjust = BrightnessLevels.getMasterAdjust(context);
         boolean appAuto = AutoBrightnessManager.isAutoEnabled(context);
         String source;
         if (appAuto) {
@@ -91,6 +96,7 @@ public final class BrightnessLogManager {
                 + " | systemMode=" + getSystemModeText(context)
                 + " | raw=" + raw
                 + " | bucket=" + percent + "%"
+                + " | masterAdjust=" + masterAdjust
                 + " | lux=" + formatLux(lux)
                 + " | appAuto=" + (appAuto ? "on" : "off")
                 + " | appMode=" + AutoBrightnessManager.getDisplayMode(AutoBrightnessManager.getSavedMode(context))
