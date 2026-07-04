@@ -227,8 +227,8 @@ public class MainActivity extends Activity {
 
     private void refreshStatus() {
         boolean granted = Settings.System.canWrite(this);
+        int currentRaw = BrightnessLevels.getSystemRaw(this, -1);
         int percent = BrightnessLevels.getCurrentPercent(this);
-        int raw = BrightnessLevels.getRawForPercent(this, percent);
         String notificationStatus = getNotificationPermissionStatus();
         BrightnessLogManager.logSnapshotIfChanged(this, "MAIN_STATUS_REFRESH", AutoBrightnessManager.getLastLux(this));
         updateMasterAdjustText();
@@ -236,7 +236,7 @@ public class MainActivity extends Activity {
         statusText.setText(
                 (granted ? "Permission: granted" : "Permission: missing")
                         + "\nNotification: " + notificationStatus
-                        + "\nCurrent level: " + percent + "% / raw " + raw
+                        + "\nCurrent level: " + percent + "% / raw " + currentRaw
                         + "\n" + AutoBrightnessManager.getStatusText(this)
         );
     }
