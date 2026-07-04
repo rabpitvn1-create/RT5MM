@@ -63,6 +63,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         }
         if (!registered) {
             registered = sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL);
+            BrightnessLogManager.appendSnapshot(appContext, registered ? "REDMI_SENSOR_REGISTERED" : "REDMI_SENSOR_REGISTER_FAILED", getLastLux(appContext));
         }
         return registered;
     }
@@ -70,6 +71,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     public void stop() {
         if (registered && sensorManager != null) {
             sensorManager.unregisterListener(this);
+            BrightnessLogManager.appendSnapshot(appContext, "REDMI_SENSOR_UNREGISTERED", getLastLux(appContext));
         }
         registered = false;
     }
@@ -82,10 +84,12 @@ public class AutoBrightnessManager implements SensorEventListener {
 
         float avgLux = smooth(clampLux(event.values[0]));
         saveLastLux(appContext, avgLux);
+        BrightnessLogManager.logSnapshotIfChanged(appContext, "REDMI_SENSOR_SAMPLE", avgLux);
 
         long now = System.currentTimeMillis();
         if (getManualUntil(appContext) > now) {
             saveMode(appContext, Mode.MANUAL_OVERRIDE);
+            BrightnessLogManager.logSnapshotIfChanged(appContext, "MANUAL_COOLDOWN_ACTIVE", avgLux);
             return;
         }
 
@@ -99,6 +103,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         if (candidate != next) {
             candidate = next;
             candidateSince = now;
+            BrightnessLogManager.logSnapshotIfChanged(appContext, "REDMI_MODE_CANDIDATE_" + next.name(), avgLux);
             return;
         }
         if (now - candidateSince < STABLE_MS) {
@@ -122,6 +127,8 @@ public class AutoBrightnessManager implements SensorEventListener {
             saveMode(appContext, Mode.NORMAL_LOCKED);
             if (returnedFromExtreme) {
                 applyAutoPercent(NORMAL_PERCENT, Mode.NORMAL_LOCKED);
+            } else {
+                BrightnessLogManager.logSnapshotIfChanged(appContext, "REDMI_MODE_NORMAL_LOCKED", getLastLux(appContext));
             }
         }
     }
@@ -130,11 +137,15 @@ public class AutoBrightnessManager implements SensorEventListener {
         int raw = BrightnessLevels.getRawForPercent(percent);
         if (BrightnessLevels.getCurrentPercent(appContext) == percent && getSavedMode(appContext) == mode) {
             saveLastAutoRaw(appContext, raw);
+            BrightnessLogManager.logSnapshotIfChanged(appContext, "REDMI_AUTO_ALREADY_" + percent + "_PERCENT", getLastLux(appContext));
             return;
         }
         boolean ok = BrightnessLevels.applyBrightness(appContext, percent, raw);
         if (ok) {
             saveLastAutoRaw(appContext, raw);
+            BrightnessLogManager.appendSnapshot(appContext, "REDMI_AUTO_APPLIED_" + percent + "_PERCENT", getLastLux(appContext));
+        } else {
+            BrightnessLogManager.appendSnapshot(appContext, "REDMI_AUTO_APPLY_FAILED_" + percent + "_PERCENT", getLastLux(appContext));
         }
         if (ok || getSavedMode(appContext) != mode) {
             saveMode(appContext, mode);
@@ -157,6 +168,7 @@ public class AutoBrightnessManager implements SensorEventListener {
 
         BrightnessLevels.saveCurrentPercent(appContext, BrightnessLevels.getPercentForRaw(currentRaw));
         recordManualOverride(appContext);
+        BrightnessLogManager.appendSnapshot(appContext, "EXTERNAL_BRIGHTNESS_CHANGE_DETECTED", getLastLux(appContext));
         candidate = null;
         candidateSince = 0L;
         return true;
@@ -206,6 +218,7 @@ public class AutoBrightnessManager implements SensorEventListener {
             editor.remove(KEY_LAST_AUTO_RAW).remove(KEY_LAST_AUTO_AT);
         }
         editor.apply();
+        BrightnessLogManager.appendSnapshot(context, enabled ? "REDMI_AUTO_STATE_ON" : "REDMI_AUTO_STATE_OFF", getLastLux(context));
     }
 
     public static boolean isAutoEnabled(Context context) {
@@ -217,6 +230,7 @@ public class AutoBrightnessManager implements SensorEventListener {
                 .putLong(KEY_MANUAL_UNTIL, System.currentTimeMillis() + MANUAL_COOLDOWN_MS)
                 .putString(KEY_AUTO_MODE, Mode.MANUAL_OVERRIDE.name())
                 .apply();
+        BrightnessLogManager.appendSnapshot(context, "MANUAL_OVERRIDE_RECORDED", getLastLux(context));
     }
 
     public static long getCooldownRemainingMs(Context context) {
@@ -233,6 +247,7 @@ public class AutoBrightnessManager implements SensorEventListener {
                 .putBoolean(KEY_SENSOR_AVAILABLE, false)
                 .putString(KEY_AUTO_MODE, Mode.UNAVAILABLE.name())
                 .apply();
+        BrightnessLogManager.appendSnapshot(context, "REDMI_AUTO_UNAVAILABLE", getLastLux(context));
     }
 
     public static Mode getSavedMode(Context context) {
