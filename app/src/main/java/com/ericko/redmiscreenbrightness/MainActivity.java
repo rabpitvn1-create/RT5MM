@@ -90,6 +90,7 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 AutoBrightnessService.stop(MainActivity.this);
+                BrightnessLogManager.appendSnapshot(MainActivity.this, "REDMI_AUTO_DISABLED", AutoBrightnessManager.getLastLux(MainActivity.this));
                 Toast.makeText(MainActivity.this, "Auto Brightness disabled", Toast.LENGTH_SHORT).show();
                 refreshStatus();
             }
@@ -105,12 +106,23 @@ public class MainActivity extends Activity {
                 if (ok) {
                     AutoBrightnessManager.recordManualOverride(MainActivity.this);
                     AutoBrightnessService.refresh(MainActivity.this);
+                    BrightnessLogManager.appendSnapshot(MainActivity.this, "TEST_SET_30_PERCENT", AutoBrightnessManager.getLastLux(MainActivity.this));
                 }
                 Toast.makeText(MainActivity.this, ok ? "Brightness set to 30%" : "Permission missing or blocked", Toast.LENGTH_SHORT).show();
                 refreshStatus();
             }
         });
         root.addView(testButton, new LinearLayout.LayoutParams(-1, -2));
+
+        Button exportLogButton = new Button(this);
+        exportLogButton.setText("Export brightness diagnostic log");
+        exportLogButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                exportBrightnessLog();
+            }
+        });
+        root.addView(exportLogButton, new LinearLayout.LayoutParams(-1, -2));
 
         setContentView(root);
         refreshStatus();
@@ -122,6 +134,7 @@ public class MainActivity extends Activity {
         if (AutoBrightnessManager.isAutoEnabled(this)) {
             AutoBrightnessService.start(this);
         }
+        BrightnessLogManager.appendSnapshot(this, "MAIN_RESUME", AutoBrightnessManager.getLastLux(this));
         statusHandler.removeCallbacks(statusRefreshRunnable);
         statusHandler.post(statusRefreshRunnable);
     }
@@ -143,6 +156,7 @@ public class MainActivity extends Activity {
             } else {
                 Toast.makeText(this, "Notification permission denied. Foreground service may still run without drawer notification.", Toast.LENGTH_LONG).show();
             }
+            BrightnessLogManager.appendSnapshot(this, "NOTIFICATION_PERMISSION_RESULT", AutoBrightnessManager.getLastLux(this));
             refreshStatus();
         }
     }
@@ -150,12 +164,14 @@ public class MainActivity extends Activity {
     private void enableAutoBrightness() {
         if (!AutoBrightnessManager.hasLightSensor(this)) {
             AutoBrightnessManager.markUnavailable(this);
+            BrightnessLogManager.appendSnapshot(this, "REDMI_AUTO_UNAVAILABLE", AutoBrightnessManager.getLastLux(this));
             Toast.makeText(this, "Auto Brightness unavailable", Toast.LENGTH_SHORT).show();
             refreshStatus();
             return;
         }
 
         if (!Settings.System.canWrite(this)) {
+            BrightnessLogManager.appendSnapshot(this, "WRITE_SETTINGS_MISSING", AutoBrightnessManager.getLastLux(this));
             Toast.makeText(this, "Grant modify system settings permission first", Toast.LENGTH_SHORT).show();
             openPermissionScreen();
             return;
@@ -163,6 +179,7 @@ public class MainActivity extends Activity {
 
         requestNotificationPermissionIfNeeded();
         AutoBrightnessService.start(this);
+        BrightnessLogManager.appendSnapshot(this, "REDMI_AUTO_ENABLED", AutoBrightnessManager.getLastLux(this));
         Toast.makeText(this, "Auto Brightness enabled", Toast.LENGTH_SHORT).show();
         refreshStatus();
     }
@@ -179,6 +196,7 @@ public class MainActivity extends Activity {
         int percent = BrightnessLevels.getCurrentPercent(this);
         int raw = BrightnessLevels.getRawForPercent(percent);
         String notificationStatus = getNotificationPermissionStatus();
+        BrightnessLogManager.logSnapshotIfChanged(this, "MAIN_STATUS_REFRESH", AutoBrightnessManager.getLastLux(this));
 
         statusText.setText(
                 (granted ? "Permission: granted" : "Permission: missing")
@@ -195,6 +213,15 @@ public class MainActivity extends Activity {
         return checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
                 ? "granted"
                 : "missing or denied";
+    }
+
+    private void exportBrightnessLog() {
+        String logText = BrightnessLogManager.exportText(this);
+        Intent sendIntent = new Intent(Intent.ACTION_SEND);
+        sendIntent.setType("text/plain");
+        sendIntent.putExtra(Intent.EXTRA_SUBJECT, "Redmi Screen Brightness diagnostic log");
+        sendIntent.putExtra(Intent.EXTRA_TEXT, logText);
+        startActivity(Intent.createChooser(sendIntent, "Export brightness diagnostic log"));
     }
 
     private void openPermissionScreen() {
