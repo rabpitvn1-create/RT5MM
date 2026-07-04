@@ -15,29 +15,22 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final String KEY_LAST_LUX = "auto_brightness_last_lux";
     private static final String KEY_SENSOR_AVAILABLE = "auto_brightness_sensor_available";
     private static final String KEY_MANUAL_UNTIL = "auto_brightness_manual_until";
+    private static final String KEY_MANUAL_LUX = "auto_brightness_manual_lux";
     private static final String KEY_LAST_AUTO_RAW = "auto_brightness_last_auto_raw";
     private static final String KEY_LAST_AUTO_AT = "auto_brightness_last_auto_at";
 
-    private static final int DARK_PERCENT = 20;
-    private static final int NORMAL_PERCENT = 30;
-    private static final int INDOOR_PERCENT = 40;
-    private static final int OUTDOOR_PERCENT = 50;
-    private static final int BRIGHT_PERCENT = 60;
-
-    private static final float DARK_TO_NORMAL_LUX = 35f;
-    private static final float NORMAL_TO_DARK_LUX = 18f;
-    private static final float NORMAL_TO_INDOOR_LUX = 160f;
-    private static final float INDOOR_TO_NORMAL_LUX = 90f;
-    private static final float INDOOR_TO_OUTDOOR_LUX = 900f;
-    private static final float OUTDOOR_TO_INDOOR_LUX = 500f;
-    private static final float OUTDOOR_TO_BRIGHT_LUX = 8000f;
-    private static final float BRIGHT_TO_OUTDOOR_LUX = 5000f;
+    private static final float[] CURVE_LUX = new float[] {0f, 1f, 5f, 20f, 50f, 100f, 200f, 400f, 700f, 1000f};
+    private static final int[] CURVE_RAW = new int[] {8, 10, 11, 14, 19, 24, 32, 42, 49, 56};
 
     private static final float MAX_LUX = 120000f;
     private static final int SAMPLE_COUNT = 5;
-    private static final long STABLE_MS = 2500L;
+    private static final long STABLE_MS = 1500L;
     private static final int RAW_CHANGE_TOLERANCE = 2;
+    private static final int RAW_APPLY_DEADBAND = 1;
+    private static final int SMOOTH_RAW_STEP = 3;
     private static final long AUTO_WRITE_GRACE_MS = 4000L;
+    private static final float LUX_CHANGE_PCT = 75f;
+    private static final float LUX_CHANGE_MIN = 5f;
     public static final long MANUAL_COOLDOWN_MS = 120000L;
 
     public enum Mode {
@@ -51,7 +44,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     private int sampleCount = 0;
     private int sampleIndex = 0;
     private boolean registered = false;
-    private int candidatePercent = -1;
+    private int candidateRaw = -1;
     private long candidateSince = 0L;
 
     public AutoBrightnessManager(Context context) {
@@ -111,9 +104,16 @@ public class AutoBrightnessManager implements SensorEventListener {
     private void evaluateLux(float avgLux, String event) {
         long now = System.currentTimeMillis();
         if (getManualUntil(appContext) > now) {
-            saveMode(appContext, Mode.MANUAL_OVERRIDE);
-            BrightnessLogManager.logSnapshotIfChanged(appContext, "MANUAL_COOLDOWN_ACTIVE", avgLux);
-            return;
+            float manualLux = getManualLux(appContext);
+            if (!luxChangedEnough(avgLux, manualLux)) {
+                saveMode(appContext, Mode.MANUAL_OVERRIDE);
+                BrightnessLogManager.logSnapshotIfChanged(appContext, "MANUAL_OVERRIDE_HELD", avgLux);
+                return;
+            }
+            clearManualOverride(appContext);
+            candidateRaw = -1;
+            candidateSince = 0L;
+            BrightnessLogManager.appendSnapshot(appContext, "MANUAL_OVERRIDE_RESUMED_BY_LUX_CHANGE", avgLux);
         }
 
         if (detectExternalBrightnessChange(now)) {
@@ -121,66 +121,68 @@ public class AutoBrightnessManager implements SensorEventListener {
             return;
         }
 
-        int currentPercent = BrightnessLevels.getCurrentPercent(appContext);
-        int targetPercent = getTargetPercent(avgLux, currentPercent);
-        if (candidatePercent != targetPercent) {
-            candidatePercent = targetPercent;
+        int targetRaw = getTargetRaw(avgLux);
+        if (candidateRaw != targetRaw) {
+            candidateRaw = targetRaw;
             candidateSince = now;
-            BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_TARGET_" + targetPercent + "_PERCENT", avgLux);
+            BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_TARGET_RAW_" + targetRaw, avgLux);
             return;
         }
         if (now - candidateSince < STABLE_MS) {
             return;
         }
 
-        applyAutoPercent(targetPercent, getModeForPercent(targetPercent));
+        applyAutoRaw(targetRaw);
     }
 
-    private void applyAutoPercent(int percent, Mode mode) {
-        int raw = BrightnessLevels.getRawForPercent(appContext, percent);
-        if (BrightnessLevels.getCurrentPercent(appContext) == percent && getSavedMode(appContext) == mode) {
-            saveLastAutoRaw(appContext, raw);
-            BrightnessLogManager.logSnapshotIfChanged(appContext, "REDMI_AUTO_ALREADY_" + percent + "_PERCENT", getLastLux(appContext));
+    private void applyAutoRaw(int targetRaw) {
+        int currentRaw = BrightnessLevels.getSystemRaw(appContext, targetRaw);
+        int delta = targetRaw - currentRaw;
+        if (Math.abs(delta) <= RAW_APPLY_DEADBAND) {
+            saveLastAutoRaw(appContext, targetRaw);
+            saveMode(appContext, getModeForRaw(targetRaw));
+            BrightnessLogManager.logSnapshotIfChanged(appContext, "REDMI_AUTO_AT_TARGET_RAW_" + targetRaw, getLastLux(appContext));
             return;
         }
-        boolean ok = BrightnessLevels.applyBrightness(appContext, percent, raw);
+
+        int step = Math.min(Math.abs(delta), SMOOTH_RAW_STEP);
+        int nextRaw = currentRaw + (delta > 0 ? step : -step);
+        int percent = BrightnessLevels.getPercentForRaw(appContext, nextRaw);
+        boolean ok = BrightnessLevels.applyBrightness(appContext, percent, nextRaw);
         if (ok) {
-            saveLastAutoRaw(appContext, raw);
-            BrightnessLogManager.appendSnapshot(appContext, "REDMI_AUTO_APPLIED_" + percent + "_PERCENT", getLastLux(appContext));
+            saveLastAutoRaw(appContext, nextRaw);
+            saveMode(appContext, getModeForRaw(nextRaw));
+            BrightnessLogManager.appendSnapshot(appContext, "REDMI_AUTO_RAMP_TO_RAW_" + nextRaw + "_TARGET_" + targetRaw, getLastLux(appContext));
         } else {
-            BrightnessLogManager.appendSnapshot(appContext, "REDMI_AUTO_APPLY_FAILED_" + percent + "_PERCENT", getLastLux(appContext));
-        }
-        if (ok || getSavedMode(appContext) != mode) {
-            saveMode(appContext, mode);
+            BrightnessLogManager.appendSnapshot(appContext, "REDMI_AUTO_APPLY_FAILED_TARGET_RAW_" + targetRaw, getLastLux(appContext));
         }
     }
 
-    private int getTargetPercent(float lux, int currentPercent) {
-        if (currentPercent <= DARK_PERCENT) {
-            return lux > DARK_TO_NORMAL_LUX ? NORMAL_PERCENT : DARK_PERCENT;
+    private int getTargetRaw(float lux) {
+        float raw;
+        if (lux <= CURVE_LUX[0]) {
+            raw = CURVE_RAW[0];
+        } else if (lux >= CURVE_LUX[CURVE_LUX.length - 1]) {
+            raw = CURVE_RAW[CURVE_RAW.length - 1];
+        } else {
+            raw = CURVE_RAW[0];
+            for (int i = 0; i < CURVE_LUX.length - 1; i++) {
+                float lux0 = CURVE_LUX[i];
+                float lux1 = CURVE_LUX[i + 1];
+                if (lux >= lux0 && lux <= lux1) {
+                    float t = (lux - lux0) / (lux1 - lux0);
+                    raw = CURVE_RAW[i] + t * (CURVE_RAW[i + 1] - CURVE_RAW[i]);
+                    break;
+                }
+            }
         }
-        if (currentPercent == NORMAL_PERCENT) {
-            if (lux < NORMAL_TO_DARK_LUX) return DARK_PERCENT;
-            if (lux > NORMAL_TO_INDOOR_LUX) return INDOOR_PERCENT;
-            return NORMAL_PERCENT;
-        }
-        if (currentPercent == INDOOR_PERCENT) {
-            if (lux < INDOOR_TO_NORMAL_LUX) return NORMAL_PERCENT;
-            if (lux > INDOOR_TO_OUTDOOR_LUX) return OUTDOOR_PERCENT;
-            return INDOOR_PERCENT;
-        }
-        if (currentPercent == OUTDOOR_PERCENT) {
-            if (lux < OUTDOOR_TO_INDOOR_LUX) return INDOOR_PERCENT;
-            if (lux > OUTDOOR_TO_BRIGHT_LUX) return BRIGHT_PERCENT;
-            return OUTDOOR_PERCENT;
-        }
-        if (lux < BRIGHT_TO_OUTDOOR_LUX) return OUTDOOR_PERCENT;
-        return BRIGHT_PERCENT;
+        int adjusted = Math.round(raw + BrightnessLevels.getMasterAdjust(appContext));
+        return clampRaw(adjusted);
     }
 
-    private Mode getModeForPercent(int percent) {
-        if (percent == DARK_PERCENT) return Mode.DARK;
-        if (percent == BRIGHT_PERCENT) return Mode.BRIGHT;
+    private Mode getModeForRaw(int raw) {
+        if (raw <= BrightnessLevels.getRawForPercent(appContext, 20)) return Mode.DARK;
+        if (raw >= BrightnessLevels.getRawForPercent(appContext, 60)) return Mode.BRIGHT;
         return Mode.NORMAL_LOCKED;
     }
 
@@ -201,9 +203,23 @@ public class AutoBrightnessManager implements SensorEventListener {
         BrightnessLevels.saveCurrentPercent(appContext, BrightnessLevels.getPercentForRaw(appContext, currentRaw));
         recordManualOverride(appContext);
         BrightnessLogManager.appendSnapshot(appContext, "EXTERNAL_BRIGHTNESS_CHANGE_DETECTED", getLastLux(appContext));
-        candidatePercent = -1;
+        candidateRaw = -1;
         candidateSince = 0L;
         return true;
+    }
+
+    private boolean luxChangedEnough(float currentLux, float manualLux) {
+        if (manualLux < 0f) {
+            return false;
+        }
+        float delta = Math.abs(currentLux - manualLux);
+        if (delta < LUX_CHANGE_MIN) {
+            return false;
+        }
+        if (manualLux <= 0f) {
+            return true;
+        }
+        return (delta * 100f / manualLux) >= LUX_CHANGE_PCT;
     }
 
     private float smooth(float lux) {
@@ -224,6 +240,12 @@ public class AutoBrightnessManager implements SensorEventListener {
         return Math.min(lux, MAX_LUX);
     }
 
+    private int clampRaw(int raw) {
+        if (raw < 1) return 1;
+        if (raw > 255) return 255;
+        return raw;
+    }
+
     public static boolean hasLightSensor(Context context) {
         SensorManager manager = (SensorManager) context.getApplicationContext().getSystemService(Context.SENSOR_SERVICE);
         return manager != null && manager.getDefaultSensor(Sensor.TYPE_LIGHT) != null;
@@ -233,7 +255,8 @@ public class AutoBrightnessManager implements SensorEventListener {
         SharedPreferences.Editor editor = getPrefs(context).edit()
                 .putBoolean(KEY_AUTO_ENABLED, enabled)
                 .putString(KEY_AUTO_MODE, enabled ? Mode.NORMAL_LOCKED.name() : Mode.OFF.name())
-                .putLong(KEY_MANUAL_UNTIL, 0L);
+                .putLong(KEY_MANUAL_UNTIL, 0L)
+                .putFloat(KEY_MANUAL_LUX, -1f);
         if (enabled) {
             editor.remove(KEY_LAST_AUTO_RAW).remove(KEY_LAST_AUTO_AT);
         }
@@ -246,11 +269,13 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     public static void recordManualOverride(Context context) {
+        float lux = getLastLux(context);
         getPrefs(context).edit()
                 .putLong(KEY_MANUAL_UNTIL, System.currentTimeMillis() + MANUAL_COOLDOWN_MS)
+                .putFloat(KEY_MANUAL_LUX, lux)
                 .putString(KEY_AUTO_MODE, Mode.MANUAL_OVERRIDE.name())
                 .apply();
-        BrightnessLogManager.appendSnapshot(context, "MANUAL_OVERRIDE_RECORDED", getLastLux(context));
+        BrightnessLogManager.appendSnapshot(context, "MANUAL_OVERRIDE_RECORDED", lux);
     }
 
     public static long getCooldownRemainingMs(Context context) {
@@ -314,6 +339,17 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     private static long getManualUntil(Context context) {
         return getPrefs(context).getLong(KEY_MANUAL_UNTIL, 0L);
+    }
+
+    private static float getManualLux(Context context) {
+        return getPrefs(context).getFloat(KEY_MANUAL_LUX, -1f);
+    }
+
+    private static void clearManualOverride(Context context) {
+        getPrefs(context).edit()
+                .putLong(KEY_MANUAL_UNTIL, 0L)
+                .putFloat(KEY_MANUAL_LUX, -1f)
+                .apply();
     }
 
     private static int getLastAutoRaw(Context context) {
