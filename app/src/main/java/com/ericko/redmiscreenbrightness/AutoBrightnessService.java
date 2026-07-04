@@ -5,8 +5,10 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Handler;
@@ -28,7 +30,26 @@ public class AutoBrightnessService extends Service {
     private AutoBrightnessManager manager;
     private Handler handler;
     private boolean foregroundStarted = false;
+    private boolean screenReceiverRegistered = false;
     private String lastNotificationSignature = "";
+
+    private final BroadcastReceiver screenEventReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null || !AutoBrightnessManager.isAutoEnabled(AutoBrightnessService.this)) {
+                return;
+            }
+            String action = intent.getAction();
+            if (Intent.ACTION_SCREEN_ON.equals(action) || Intent.ACTION_USER_PRESENT.equals(action)) {
+                if (manager == null) {
+                    manager = new AutoBrightnessManager(AutoBrightnessService.this);
+                }
+                manager.resumeProtection(Intent.ACTION_USER_PRESENT.equals(action) ? "PROTECTION_USER_PRESENT" : "PROTECTION_SCREEN_ON");
+                updateNotification(true);
+                scheduleProtectionUpdates();
+            }
+        }
+    };
 
     private final Runnable notificationRefreshRunnable = new Runnable() {
         @Override
@@ -60,6 +81,7 @@ public class AutoBrightnessService extends Service {
         handler = new Handler(Looper.getMainLooper());
         manager = new AutoBrightnessManager(this);
         createNotificationChannel();
+        registerScreenReceiver();
     }
 
     @Override
@@ -89,7 +111,7 @@ public class AutoBrightnessService extends Service {
         scheduleProtectionUpdates();
 
         if (ACTION_REFRESH.equals(action)) {
-            manager.evaluateLastLux("PROTECTION_REFRESH_REQUEST");
+            manager.resumeProtection("PROTECTION_REFRESH_REQUEST");
             updateNotification(true);
         }
 
@@ -102,6 +124,7 @@ public class AutoBrightnessService extends Service {
             handler.removeCallbacks(notificationRefreshRunnable);
             handler.removeCallbacks(protectionUpdateRunnable);
         }
+        unregisterScreenReceiver();
         if (manager != null) {
             manager.stop();
             manager = null;
@@ -224,6 +247,7 @@ public class AutoBrightnessService extends Service {
             handler.removeCallbacks(notificationRefreshRunnable);
             handler.removeCallbacks(protectionUpdateRunnable);
         }
+        unregisterScreenReceiver();
         if (manager != null) {
             manager.stop();
             manager = null;
@@ -242,6 +266,36 @@ public class AutoBrightnessService extends Service {
         } catch (Throwable ignored) {
         }
         foregroundStarted = false;
+    }
+
+    private void registerScreenReceiver() {
+        if (screenReceiverRegistered) {
+            return;
+        }
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        filter.addAction(Intent.ACTION_USER_PRESENT);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(screenEventReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                registerReceiver(screenEventReceiver, filter);
+            }
+            screenReceiverRegistered = true;
+        } catch (Throwable ignored) {
+            screenReceiverRegistered = false;
+        }
+    }
+
+    private void unregisterScreenReceiver() {
+        if (!screenReceiverRegistered) {
+            return;
+        }
+        try {
+            unregisterReceiver(screenEventReceiver);
+        } catch (Throwable ignored) {
+        }
+        screenReceiverRegistered = false;
     }
 
     private void createNotificationChannel() {
