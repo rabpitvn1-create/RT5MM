@@ -22,6 +22,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_POST_NOTIFICATIONS = 1001;
 
     private TextView statusText;
+    private TextView masterAdjustText;
     private final Handler statusHandler = new Handler(Looper.getMainLooper());
     private final Runnable statusRefreshRunnable = new Runnable() {
         @Override
@@ -61,8 +62,41 @@ public class MainActivity extends Activity {
         statusText.setTextSize(16);
         statusText.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-1, -2);
-        statusParams.setMargins(0, dp(16), 0, dp(16));
+        statusParams.setMargins(0, dp(16), 0, dp(8));
         root.addView(statusText, statusParams);
+
+        masterAdjustText = new TextView(this);
+        masterAdjustText.setTextSize(14);
+        masterAdjustText.setGravity(Gravity.CENTER);
+        root.addView(masterAdjustText, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout adjustRow = new LinearLayout(this);
+        adjustRow.setOrientation(LinearLayout.HORIZONTAL);
+        adjustRow.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams adjustRowParams = new LinearLayout.LayoutParams(-1, -2);
+        adjustRowParams.setMargins(0, dp(8), 0, dp(8));
+
+        Button dimmerButton = new Button(this);
+        dimmerButton.setText("Auto dimmer");
+        dimmerButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                changeMasterAdjust(-2);
+            }
+        });
+        adjustRow.addView(dimmerButton, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        Button brighterButton = new Button(this);
+        brighterButton.setText("Auto brighter");
+        brighterButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                changeMasterAdjust(2);
+            }
+        });
+        adjustRow.addView(brighterButton, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        root.addView(adjustRow, adjustRowParams);
 
         Button permissionButton = new Button(this);
         permissionButton.setText("Open modify system settings permission");
@@ -98,7 +132,7 @@ public class MainActivity extends Activity {
         root.addView(disableAutoButton, new LinearLayout.LayoutParams(-1, -2));
 
         Button testButton = new Button(this);
-        testButton.setText("Test set 30% raw " + BrightnessLevels.getRawForPercent(30));
+        testButton.setText("Test set 30% raw " + BrightnessLevels.getRawForPercent(this, 30));
         testButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -194,9 +228,10 @@ public class MainActivity extends Activity {
     private void refreshStatus() {
         boolean granted = Settings.System.canWrite(this);
         int percent = BrightnessLevels.getCurrentPercent(this);
-        int raw = BrightnessLevels.getRawForPercent(percent);
+        int raw = BrightnessLevels.getRawForPercent(this, percent);
         String notificationStatus = getNotificationPermissionStatus();
         BrightnessLogManager.logSnapshotIfChanged(this, "MAIN_STATUS_REFRESH", AutoBrightnessManager.getLastLux(this));
+        updateMasterAdjustText();
 
         statusText.setText(
                 (granted ? "Permission: granted" : "Permission: missing")
@@ -204,6 +239,24 @@ public class MainActivity extends Activity {
                         + "\nCurrent level: " + percent + "% / raw " + raw
                         + "\n" + AutoBrightnessManager.getStatusText(this)
         );
+    }
+
+    private void updateMasterAdjustText() {
+        if (masterAdjustText == null) {
+            return;
+        }
+        int adjust = BrightnessLevels.getMasterAdjust(this);
+        String adjustText = adjust > 0 ? "+" + adjust : String.valueOf(adjust);
+        masterAdjustText.setText("Master brightness adjust: " + adjustText + " raw");
+    }
+
+    private void changeMasterAdjust(int delta) {
+        int adjust = BrightnessLevels.changeMasterAdjust(this, delta);
+        BrightnessLogManager.appendSnapshot(this, "MASTER_ADJUST_CHANGED_" + adjust, AutoBrightnessManager.getLastLux(this));
+        if (AutoBrightnessManager.isAutoEnabled(this)) {
+            AutoBrightnessService.refresh(this);
+        }
+        refreshStatus();
     }
 
     private String getNotificationPermissionStatus() {
