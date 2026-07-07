@@ -20,6 +20,7 @@ public class BootReceiver extends BroadcastReceiver {
         }
 
         if (AutoBrightnessManager.isAutoEnabled(context)) {
+            ProtectionServiceHealth.markBootRestore(context, action);
             BrightnessLogManager.appendSnapshot(context, "PROTECTION_RESTORE_AFTER_BOOT", AutoBrightnessManager.getLastLux(context));
             AutoBrightnessService.start(context);
         }
