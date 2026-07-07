@@ -17,6 +17,7 @@ public final class ProtectionDecisionEngine {
         CANDIDATE_CHANGED,
         SAME_BUCKET,
         STABLE_DELAY_WAIT,
+        WRITE_BUDGET_WAIT,
         USER_HOLD_ACTIVE,
         SENSOR_UNTRUSTED,
         INVALID_REQUEST
@@ -37,6 +38,9 @@ public final class ProtectionDecisionEngine {
         public final int candidatePercent;
         public final long candidateSince;
         public final long now;
+        public final long lastWriteAt;
+        public final long writeBudgetMs;
+        public final boolean forceApply;
         public final boolean userHoldActive;
         public final boolean sensorTrusted;
         public final int learnedPercent;
@@ -49,6 +53,9 @@ public final class ProtectionDecisionEngine {
                 int candidatePercent,
                 long candidateSince,
                 long now,
+                long lastWriteAt,
+                long writeBudgetMs,
+                boolean forceApply,
                 boolean userHoldActive,
                 boolean sensorTrusted,
                 int learnedPercent,
@@ -60,6 +67,9 @@ public final class ProtectionDecisionEngine {
             this.candidatePercent = candidatePercent;
             this.candidateSince = candidateSince;
             this.now = now;
+            this.lastWriteAt = lastWriteAt;
+            this.writeBudgetMs = writeBudgetMs;
+            this.forceApply = forceApply;
             this.userHoldActive = userHoldActive;
             this.sensorTrusted = sensorTrusted;
             this.learnedPercent = learnedPercent;
@@ -76,6 +86,7 @@ public final class ProtectionDecisionEngine {
         public final int nextCandidatePercent;
         public final long nextCandidateSince;
         public final long stableMs;
+        public final long waitMs;
         public final float confidence;
 
         private Decision(
@@ -87,6 +98,7 @@ public final class ProtectionDecisionEngine {
                 int nextCandidatePercent,
                 long nextCandidateSince,
                 long stableMs,
+                long waitMs,
                 float confidence
         ) {
             this.action = action;
@@ -97,6 +109,7 @@ public final class ProtectionDecisionEngine {
             this.nextCandidatePercent = nextCandidatePercent;
             this.nextCandidateSince = nextCandidateSince;
             this.stableMs = stableMs;
+            this.waitMs = waitMs;
             this.confidence = confidence;
         }
 
@@ -106,6 +119,7 @@ public final class ProtectionDecisionEngine {
                     + "_" + targetReason.name()
                     + "_TARGET_" + targetPercent
                     + "_RAW_" + targetRaw
+                    + "_WAIT_" + waitMs
                     + "_CONF_" + Math.round(confidence * 100f);
         }
     }
@@ -118,7 +132,7 @@ public final class ProtectionDecisionEngine {
 
     public Decision decide(Request request) {
         if (request == null) {
-            return fallback(Action.BLOCKED, Reason.INVALID_REQUEST, TargetReason.UNKNOWN, ProtectionPolicy.LEVEL_20, 0L, 0f);
+            return fallback(Action.BLOCKED, Reason.INVALID_REQUEST, TargetReason.UNKNOWN, ProtectionPolicy.LEVEL_20, 0L, 0L, 0f);
         }
 
         int currentPercent = normalizePercent(request.currentPercent);
@@ -136,6 +150,7 @@ public final class ProtectionDecisionEngine {
                     currentPercent,
                     now,
                     0L,
+                    0L,
                     1f
             );
         }
@@ -150,6 +165,7 @@ public final class ProtectionDecisionEngine {
                     raw,
                     request.candidatePercent,
                     request.candidateSince,
+                    0L,
                     0L,
                     0f
             );
@@ -173,6 +189,7 @@ public final class ProtectionDecisionEngine {
                         targetPercent,
                         now,
                         0L,
+                        0L,
                         0.95f
                 );
             }
@@ -184,6 +201,7 @@ public final class ProtectionDecisionEngine {
                     targetRaw,
                     targetPercent,
                     now,
+                    0L,
                     0L,
                     1f
             );
@@ -199,6 +217,7 @@ public final class ProtectionDecisionEngine {
                     targetPercent,
                     now,
                     protectionPolicy.getStableMs(currentPercent, targetPercent),
+                    0L,
                     0.35f
             );
         }
@@ -217,7 +236,24 @@ public final class ProtectionDecisionEngine {
                     targetPercent,
                     candidateSince,
                     stableMs,
+                    stableMs - elapsed,
                     confidence
+            );
+        }
+
+        long budgetWaitMs = getWriteBudgetWaitMs(request, now, currentPercent, targetPercent);
+        if (budgetWaitMs > 0L) {
+            return new Decision(
+                    Action.WAIT,
+                    Reason.WRITE_BUDGET_WAIT,
+                    targetReason,
+                    targetPercent,
+                    targetRaw,
+                    targetPercent,
+                    candidateSince,
+                    stableMs,
+                    budgetWaitMs,
+                    0.9f
             );
         }
 
@@ -230,14 +266,34 @@ public final class ProtectionDecisionEngine {
                 targetPercent,
                 candidateSince,
                 stableMs,
+                0L,
                 1f
         );
     }
 
-    private Decision fallback(Action action, Reason reason, TargetReason targetReason, int percent, long now, float confidence) {
+    private long getWriteBudgetWaitMs(Request request, long now, int currentPercent, int targetPercent) {
+        if (request.forceApply) {
+            return 0L;
+        }
+        if (targetPercent > currentPercent && request.lux >= 1000f) {
+            return 0L;
+        }
+        long budgetMs = Math.max(0L, request.writeBudgetMs);
+        long lastWriteAt = Math.max(0L, request.lastWriteAt);
+        if (budgetMs <= 0L || lastWriteAt <= 0L) {
+            return 0L;
+        }
+        long elapsedSinceWrite = Math.max(0L, now - lastWriteAt);
+        if (elapsedSinceWrite >= budgetMs) {
+            return 0L;
+        }
+        return budgetMs - elapsedSinceWrite;
+    }
+
+    private Decision fallback(Action action, Reason reason, TargetReason targetReason, int percent, long now, long waitMs, float confidence) {
         int normalized = normalizePercent(percent);
         int raw = BrightnessLevels.getRawForPercent(normalized);
-        return new Decision(action, reason, targetReason, normalized, raw, normalized, now, 0L, confidence);
+        return new Decision(action, reason, targetReason, normalized, raw, normalized, now, 0L, waitMs, confidence);
     }
 
     private TargetReason getTargetReason(boolean useLearned, int currentPercent, int targetPercent) {
