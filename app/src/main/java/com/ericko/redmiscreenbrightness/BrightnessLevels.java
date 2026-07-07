@@ -14,8 +14,8 @@ public final class BrightnessLevels {
      * Keep these raw values conservative for Redmi/HyperOS to protect the screen,
      * reduce eye strain, and save battery.
      */
-    private static final int[] PERCENTS = new int[] {20, 30, 40, 50, 60};
-    private static final int[] RAW_VALUES = new int[] {11, 17, 26, 38, 49};
+    private static final int[] PERCENTS = new int[] {20, 25, 30, 35, 40, 45, 50, 55, 60};
+    private static final int[] RAW_VALUES = new int[] {11, 14, 17, 22, 26, 32, 38, 44, 49};
 
     private static final int MIN_RAW = 1;
     private static final int MAX_RAW = 255;
@@ -43,16 +43,19 @@ public final class BrightnessLevels {
     }
 
     public static int getNextPercent(int current) {
-        if (current == 20) return 30;
-        if (current == 30) return 40;
-        if (current == 40) return 50;
-        if (current == 50) return 60;
-        return 20;
+        int normalized = getNearestPercent(current);
+        for (int i = 0; i < PERCENTS.length - 1; i++) {
+            if (PERCENTS[i] == normalized) {
+                return PERCENTS[i + 1];
+            }
+        }
+        return PERCENTS[0];
     }
 
     public static int getRawForPercent(int percent) {
+        int normalized = getNearestPercent(percent);
         for (int i = 0; i < PERCENTS.length; i++) {
-            if (PERCENTS[i] == percent) {
+            if (PERCENTS[i] == normalized) {
                 return RAW_VALUES[i];
             }
         }
@@ -134,6 +137,19 @@ public final class BrightnessLevels {
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    private static int getNearestPercent(int percent) {
+        int bestIndex = 0;
+        int bestDistance = Math.abs(percent - PERCENTS[0]);
+        for (int i = 1; i < PERCENTS.length; i++) {
+            int distance = Math.abs(percent - PERCENTS[i]);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestIndex = i;
+            }
+        }
+        return PERCENTS[bestIndex];
     }
 
     private static int clampRaw(int raw) {
