@@ -34,6 +34,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final int REQUIRED_LEARNING_CONFIRMATIONS = 2;
     private static final long APP_WRITE_GRACE_MS = 12000L;
     private static final long USER_INTENT_STABLE_MS = 3000L;
+    private static final long WRITE_BUDGET_MS = 6000L;
     public static final long USER_HOLD_MS = 45L * 60L * 1000L;
     private static final float USER_HOLD_RELEASE_PCT = 120f;
     private static final float USER_HOLD_RELEASE_MIN_LUX = 60f;
@@ -141,7 +142,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         if (isUserHoldActive(appContext, now)) {
             float holdLux = getUserHoldLux(appContext);
             if (!shouldReleaseUserHold(avgLux, holdLux)) {
-                ProtectionDecisionEngine.Decision decision = makeDecision(avgLux, now, true, -1);
+                ProtectionDecisionEngine.Decision decision = makeDecision(avgLux, now, true, -1, false);
                 updateCandidate(decision);
                 saveMode(appContext, Mode.USER_HOLD);
                 BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_DECISION_" + decision.toLogSuffix(), avgLux);
@@ -159,7 +160,13 @@ public class AutoBrightnessManager implements SensorEventListener {
             return;
         }
 
-        ProtectionDecisionEngine.Decision decision = makeDecision(avgLux, now, false, getSafeLearnedPercent(avgLux));
+        ProtectionDecisionEngine.Decision decision = makeDecision(
+                avgLux,
+                now,
+                false,
+                getSafeLearnedPercent(avgLux),
+                shouldForceApply(event)
+        );
         updateCandidate(decision);
         BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_DECISION_" + decision.toLogSuffix(), avgLux);
 
@@ -176,7 +183,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         }
     }
 
-    private ProtectionDecisionEngine.Decision makeDecision(float lux, long now, boolean userHoldActive, int learnedPercent) {
+    private ProtectionDecisionEngine.Decision makeDecision(float lux, long now, boolean userHoldActive, int learnedPercent, boolean forceApply) {
         int currentPercent = BrightnessLevels.getCurrentPercent(appContext);
         int currentRaw = BrightnessLevels.getSystemRaw(appContext, BrightnessLevels.getRawForPercent(currentPercent));
         return decisionEngine.decide(new ProtectionDecisionEngine.Request(
@@ -186,11 +193,18 @@ public class AutoBrightnessManager implements SensorEventListener {
                 candidatePercent,
                 candidateSince,
                 now,
+                getLastAutoAt(appContext),
+                WRITE_BUDGET_MS,
+                forceApply,
                 userHoldActive,
                 true,
                 learnedPercent,
                 RAW_CHANGE_TOLERANCE
         ));
+    }
+
+    private boolean shouldForceApply(String event) {
+        return event != null && !"PROTECTION_SENSOR_SAMPLE".equals(event);
     }
 
     private void updateCandidate(ProtectionDecisionEngine.Decision decision) {
