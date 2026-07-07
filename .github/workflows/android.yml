@@ -7,6 +7,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -14,6 +17,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -32,8 +37,38 @@ jobs:
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
 
-      - name: Upload debug APK
+      - name: Prepare APK filename
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/debug/app-debug.apk release/Screen-Protection-debug.apk
+
+      - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Redmi Screen Protection.apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Screen-Protection-debug-apk
+          path: release/Screen-Protection-debug.apk
+
+      - name: Publish latest APK release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: screen-protection-latest
+          APK_PATH: release/Screen-Protection-debug.apk
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "$TAG_NAME" "$GITHUB_SHA"
+          git push origin "$TAG_NAME" --force
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "$APK_PATH" --clobber
+            gh release edit "$TAG_NAME" \
+              --title "Screen Protection APK" \
+              --notes "Latest debug APK built from main commit $GITHUB_SHA." \
+              --latest
+          else
+            gh release create "$TAG_NAME" "$APK_PATH" \
+              --title "Screen Protection APK" \
+              --notes "Latest debug APK built from main commit $GITHUB_SHA." \
+              --latest
+          fi
