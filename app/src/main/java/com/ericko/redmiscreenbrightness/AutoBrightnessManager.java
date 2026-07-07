@@ -29,7 +29,7 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     private static final float MAX_LUX = 120000f;
     private static final int SAMPLE_COUNT = 5;
-    private static final int RAW_CHANGE_TOLERANCE = 2;
+    private static final int RAW_CHANGE_TOLERANCE = 0;
     private static final int USER_CHANGE_MIN_RAW = 6;
     private static final int REQUIRED_LEARNING_CONFIRMATIONS = 2;
     private static final long APP_WRITE_GRACE_MS = 12000L;
