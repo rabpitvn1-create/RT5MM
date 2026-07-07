@@ -31,6 +31,7 @@ public class MainActivity extends Activity {
     private Button notificationButton;
     private Button batteryButton;
     private Button hyperOsButton;
+    private boolean diagnosticVisible = false;
 
     private final Handler statusHandler = new Handler(Looper.getMainLooper());
     private final Runnable statusRefreshRunnable = new Runnable() {
@@ -75,9 +76,18 @@ public class MainActivity extends Activity {
         setupParams.setMargins(0, dp(20), 0, dp(12));
         root.addView(setupText, setupParams);
 
+        View.OnLongClickListener diagnosticLongClick = new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                toggleDiagnosticMode();
+                return true;
+            }
+        };
+
         statusText = new TextView(this);
         statusText.setTextSize(16);
         statusText.setGravity(Gravity.CENTER);
+        statusText.setOnLongClickListener(diagnosticLongClick);
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-1, -2);
         statusParams.setMargins(0, dp(8), 0, dp(16));
         root.addView(statusText, statusParams);
@@ -90,6 +100,7 @@ public class MainActivity extends Activity {
                 toggleProtection();
             }
         });
+        toggleButton.setOnLongClickListener(diagnosticLongClick);
         addButton(root, toggleButton, 64);
 
         notificationButton = new Button(this);
@@ -261,12 +272,23 @@ public class MainActivity extends Activity {
         batteryButton.setVisibility(View.GONE);
         hyperOsButton.setVisibility(View.GONE);
 
-        setupText.setText("Power setup: " + setupState + " · one button handles the next required step");
+        if (diagnosticVisible) {
+            setupText.setText("Diagnostic mode · long-press status or button to hide");
+            statusText.setText(AutoBrightnessManager.getDiagnosticText(this));
+        } else {
+            setupText.setText("Power setup: " + setupState + " · one button handles the next required step");
+            statusText.setText(
+                    "Current: " + percent + "% / raw " + currentRaw
+                            + "\n" + AutoBrightnessManager.getStatusText(this)
+            );
+        }
+    }
 
-        statusText.setText(
-                "Current: " + percent + "% / raw " + currentRaw
-                        + "\n" + AutoBrightnessManager.getStatusText(this)
-        );
+    private void toggleDiagnosticMode() {
+        diagnosticVisible = !diagnosticVisible;
+        BrightnessLogManager.appendSnapshot(this, diagnosticVisible ? "DIAGNOSTIC_MODE_ON" : "DIAGNOSTIC_MODE_OFF", AutoBrightnessManager.getLastLux(this));
+        Toast.makeText(this, diagnosticVisible ? "Diagnostic mode on" : "Diagnostic mode off", Toast.LENGTH_SHORT).show();
+        refreshStatus();
     }
 
     private String getSetupState(boolean canWrite, boolean sensorOk, boolean notificationOk, boolean batteryOk) {
