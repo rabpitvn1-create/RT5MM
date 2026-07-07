@@ -26,6 +26,15 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final String KEY_LEARNED_PERCENT_PREFIX = "protection_learned_percent_";
     private static final String KEY_LEARNING_PENDING_PERCENT_PREFIX = "protection_learning_pending_percent_";
     private static final String KEY_LEARNING_CONFIRM_COUNT_PREFIX = "protection_learning_confirm_count_";
+    private static final String KEY_LAST_DECISION_AT = "protection_last_decision_at";
+    private static final String KEY_LAST_DECISION_ACTION = "protection_last_decision_action";
+    private static final String KEY_LAST_DECISION_REASON = "protection_last_decision_reason";
+    private static final String KEY_LAST_DECISION_TARGET_REASON = "protection_last_decision_target_reason";
+    private static final String KEY_LAST_DECISION_TARGET_PERCENT = "protection_last_decision_target_percent";
+    private static final String KEY_LAST_DECISION_TARGET_RAW = "protection_last_decision_target_raw";
+    private static final String KEY_LAST_DECISION_STABLE_MS = "protection_last_decision_stable_ms";
+    private static final String KEY_LAST_DECISION_WAIT_MS = "protection_last_decision_wait_ms";
+    private static final String KEY_LAST_DECISION_CONFIDENCE = "protection_last_decision_confidence";
 
     private static final float MAX_LUX = 120000f;
     private static final int SAMPLE_COUNT = 5;
@@ -144,6 +153,7 @@ public class AutoBrightnessManager implements SensorEventListener {
             if (!shouldReleaseUserHold(avgLux, holdLux)) {
                 ProtectionDecisionEngine.Decision decision = makeDecision(avgLux, now, true, -1, false);
                 updateCandidate(decision);
+                saveLastDecision(appContext, decision, now);
                 saveMode(appContext, Mode.USER_HOLD);
                 BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_DECISION_" + decision.toLogSuffix(), avgLux);
                 return;
@@ -168,6 +178,7 @@ public class AutoBrightnessManager implements SensorEventListener {
                 shouldForceApply(event)
         );
         updateCandidate(decision);
+        saveLastDecision(appContext, decision, now);
         BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_DECISION_" + decision.toLogSuffix(), avgLux);
 
         if (decision.action == ProtectionDecisionEngine.Action.APPLY) {
@@ -490,11 +501,80 @@ public class AutoBrightnessManager implements SensorEventListener {
                 + "\nLearned: " + learnedText;
     }
 
+    public static String getDiagnosticText(Context context) {
+        SharedPreferences prefs = getPrefs(context);
+        long now = System.currentTimeMillis();
+        float lastLux = getLastLux(context);
+        ProtectionPolicy policy = new ProtectionPolicy();
+        String profile = policy.getProfileName(lastLux);
+        int currentRaw = BrightnessLevels.getSystemRaw(context, -1);
+        int currentPercent = BrightnessLevels.getCurrentPercent(context);
+        int learnedPercent = getLearnedPercent(context, lastLux);
+        long lastWriteAt = getLastAutoAt(context);
+        long lastDecisionAt = prefs.getLong(KEY_LAST_DECISION_AT, 0L);
+        long writeWait = getWriteBudgetRemainingMs(context, now);
+        long hold = getUserHoldRemainingMs(context);
+        int holdRaw = getUserHoldRaw(context);
+
+        String luxText = lastLux < 0f ? "unknown" : String.format(Locale.US, "%.1f lx", lastLux);
+        String learnedText = learnedPercent > 0 ? learnedPercent + "%" : "none";
+        String lastWriteText = lastWriteAt <= 0L ? "never" : (Math.max(0L, now - lastWriteAt) / 1000L) + "s ago";
+        String decisionAgeText = lastDecisionAt <= 0L ? "never" : (Math.max(0L, now - lastDecisionAt) / 1000L) + "s ago";
+        String holdText = hold > 0L ? (hold / 1000L) + "s" + (holdRaw >= 0 ? " / raw " + holdRaw : "") : "inactive";
+
+        return "Diagnostic mode"
+                + "\nProtection: " + (isAutoEnabled(context) ? "On" : "Off")
+                + "\nMode: " + getDisplayMode(getSavedMode(context))
+                + "\nLux: " + luxText + " / " + profile
+                + "\nCurrent: " + currentPercent + "% / raw " + currentRaw
+                + "\nTarget: " + prefs.getInt(KEY_LAST_DECISION_TARGET_PERCENT, -1) + "% / raw " + prefs.getInt(KEY_LAST_DECISION_TARGET_RAW, -1)
+                + "\nDecision: " + prefs.getString(KEY_LAST_DECISION_ACTION, "none")
+                + " / " + prefs.getString(KEY_LAST_DECISION_REASON, "none")
+                + "\nTarget reason: " + prefs.getString(KEY_LAST_DECISION_TARGET_REASON, "none")
+                + "\nConfidence: " + Math.round(prefs.getFloat(KEY_LAST_DECISION_CONFIDENCE, 0f) * 100f) + "%"
+                + "\nStable wait: " + prefs.getLong(KEY_LAST_DECISION_STABLE_MS, 0L) + "ms"
+                + "\nDecision wait: " + prefs.getLong(KEY_LAST_DECISION_WAIT_MS, 0L) + "ms"
+                + "\nWrite budget: " + (writeWait > 0L ? writeWait + "ms remaining" : "ready")
+                + "\nLast write: " + lastWriteText
+                + "\nLast decision: " + decisionAgeText
+                + "\nUser hold: " + holdText
+                + "\nLearned: " + learnedText;
+    }
+
     public static String getDisplayMode(Mode mode) {
         if (mode == Mode.PROTECTING) return "Protecting";
         if (mode == Mode.USER_HOLD) return "Holding your brightness";
         if (mode == Mode.UNAVAILABLE) return "Unavailable";
         return "Off";
+    }
+
+    private static void saveLastDecision(Context context, ProtectionDecisionEngine.Decision decision, long now) {
+        if (decision == null) {
+            return;
+        }
+        getPrefs(context).edit()
+                .putLong(KEY_LAST_DECISION_AT, now)
+                .putString(KEY_LAST_DECISION_ACTION, decision.action.name())
+                .putString(KEY_LAST_DECISION_REASON, decision.reason.name())
+                .putString(KEY_LAST_DECISION_TARGET_REASON, decision.targetReason.name())
+                .putInt(KEY_LAST_DECISION_TARGET_PERCENT, decision.targetPercent)
+                .putInt(KEY_LAST_DECISION_TARGET_RAW, decision.targetRaw)
+                .putLong(KEY_LAST_DECISION_STABLE_MS, decision.stableMs)
+                .putLong(KEY_LAST_DECISION_WAIT_MS, decision.waitMs)
+                .putFloat(KEY_LAST_DECISION_CONFIDENCE, decision.confidence)
+                .apply();
+    }
+
+    private static long getWriteBudgetRemainingMs(Context context, long now) {
+        long lastWriteAt = getLastAutoAt(context);
+        if (lastWriteAt <= 0L) {
+            return 0L;
+        }
+        long elapsed = Math.max(0L, now - lastWriteAt);
+        if (elapsed >= WRITE_BUDGET_MS) {
+            return 0L;
+        }
+        return WRITE_BUDGET_MS - elapsed;
     }
 
     private static boolean isUserHoldActive(Context context, long now) {
