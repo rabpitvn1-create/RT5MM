@@ -24,15 +24,8 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final String KEY_EXTERNAL_CANDIDATE_RAW = "auto_brightness_external_candidate_raw";
     private static final String KEY_EXTERNAL_CANDIDATE_SINCE = "auto_brightness_external_candidate_since";
 
-    private static final int LEVEL_20 = 20;
-    private static final int LEVEL_30 = 30;
-    private static final int LEVEL_40 = 40;
-    private static final int LEVEL_50 = 50;
-    private static final int LEVEL_60 = 60;
-
     private static final float MAX_LUX = 120000f;
     private static final int SAMPLE_COUNT = 5;
-    private static final long STABLE_MS = 2500L;
     private static final int RAW_CHANGE_TOLERANCE = 2;
     private static final int USER_CHANGE_MIN_RAW = 6;
     private static final long APP_WRITE_GRACE_MS = 12000L;
@@ -48,6 +41,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     private final Context appContext;
     private final SensorManager sensorManager;
     private final Sensor lightSensor;
+    private final ProtectionPolicy protectionPolicy = new ProtectionPolicy();
     private final float[] samples = new float[SAMPLE_COUNT];
     private int sampleCount = 0;
     private int sampleIndex = 0;
@@ -124,10 +118,12 @@ public class AutoBrightnessManager implements SensorEventListener {
             return;
         }
 
+        long now = System.currentTimeMillis();
         float avgLux = smooth(clampLux(event.values[0]));
-        saveLastLux(appContext, avgLux);
-        BrightnessLogManager.logSnapshotIfChanged(appContext, "PROTECTION_SENSOR_SAMPLE", avgLux);
-        evaluateLux(avgLux, "PROTECTION_SENSOR_SAMPLE");
+        float trustedLux = protectionPolicy.filterLux(avgLux, now);
+        saveLastLux(appContext, trustedLux);
+        BrightnessLogManager.logSnapshotIfChanged(appContext, "PROTECTION_SENSOR_SAMPLE", trustedLux);
+        evaluateLux(trustedLux, "PROTECTION_SENSOR_SAMPLE");
     }
 
     @Override
@@ -164,7 +160,8 @@ public class AutoBrightnessManager implements SensorEventListener {
             BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_TARGET_" + targetPercent + "_PERCENT", avgLux);
             return;
         }
-        if (now - candidateSince < STABLE_MS) {
+        long stableMs = protectionPolicy.getStableMs(currentPercent, targetPercent);
+        if (now - candidateSince < stableMs) {
             return;
         }
 
@@ -194,26 +191,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     private int getTargetPercent(float lux, int currentPercent) {
-        if (currentPercent <= LEVEL_20) {
-            return lux > 30f ? LEVEL_30 : LEVEL_20;
-        }
-        if (currentPercent == LEVEL_30) {
-            if (lux < 12f) return LEVEL_20;
-            if (lux > 160f) return LEVEL_40;
-            return LEVEL_30;
-        }
-        if (currentPercent == LEVEL_40) {
-            if (lux < 90f) return LEVEL_30;
-            if (lux > 650f) return LEVEL_50;
-            return LEVEL_40;
-        }
-        if (currentPercent == LEVEL_50) {
-            if (lux < 350f) return LEVEL_40;
-            if (lux > 3500f) return LEVEL_60;
-            return LEVEL_50;
-        }
-        if (lux < 2100f) return LEVEL_50;
-        return LEVEL_60;
+        return protectionPolicy.getTargetPercent(lux, currentPercent);
     }
 
     private boolean detectUserBrightnessChange(long now, float avgLux) {
@@ -387,12 +365,13 @@ public class AutoBrightnessManager implements SensorEventListener {
         Mode mode = getSavedMode(context);
         long hold = getUserHoldRemainingMs(context);
         int holdRaw = getUserHoldRaw(context);
+        String profile = new ProtectionPolicy().getProfileName(lastLux);
 
         String luxText = lastLux < 0f ? "unknown" : String.format(Locale.US, "%.1f lx", lastLux);
         String holdText = hold > 0L ? (hold / 1000L) + "s" + (holdRaw >= 0 ? " / raw " + holdRaw : "") : "inactive";
 
         return "Protection: " + (enabled ? "On" : "Off")
-                + "\nLux: " + luxText
+                + "\nLux: " + luxText + " / " + profile
                 + "\nMode: " + getDisplayMode(mode)
                 + "\nUser hold: " + holdText;
     }
