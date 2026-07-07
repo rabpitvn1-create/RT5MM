@@ -22,33 +22,49 @@ Internal behavior:
 
 ## Current protection buckets
 
-These are the raw values currently used by the app:
+These are the raw values currently used by the app. The curve now uses 17 protection buckets for smoother movement:
 
 - 20% = raw 11
+- 23% = raw 13
 - 25% = raw 14
+- 28% = raw 16
 - 30% = raw 17
+- 33% = raw 20
 - 35% = raw 22
+- 38% = raw 24
 - 40% = raw 26
+- 43% = raw 29
 - 45% = raw 32
+- 48% = raw 35
 - 50% = raw 38
+- 53% = raw 41
 - 55% = raw 44
+- 58% = raw 47
 - 60% = raw 49
 
 The percentages are app-level protection buckets, not a promise that Android or HyperOS will display the same visual percentage on every device.
 
 ## Lux curve
 
-The protection policy uses smaller lux steps so brightness changes one bucket at a time instead of jumping across large ranges:
+The protection policy uses 17 lux bands so brightness changes one small bucket at a time instead of jumping across large ranges:
 
 - up to 8 lx -> 20%
+- up to 13 lx -> 23%
 - up to 20 lx -> 25%
+- up to 35 lx -> 28%
 - up to 60 lx -> 30%
+- up to 85 lx -> 33%
 - up to 120 lx -> 35%
+- up to 175 lx -> 38%
 - up to 250 lx -> 40%
+- up to 355 lx -> 43%
 - up to 500 lx -> 45%
+- up to 710 lx -> 48%
 - up to 1000 lx -> 50%
+- up to 1580 lx -> 53%
 - up to 2500 lx -> 55%
-- above 2500 lx -> 60%
+- up to 5000 lx -> 58%
+- above 5000 lx -> 60%
 
 ## Quick Settings Tile
 
