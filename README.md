@@ -25,12 +25,30 @@ Internal behavior:
 These are the raw values currently used by the app:
 
 - 20% = raw 11
+- 25% = raw 14
 - 30% = raw 17
+- 35% = raw 22
 - 40% = raw 26
+- 45% = raw 32
 - 50% = raw 38
+- 55% = raw 44
 - 60% = raw 49
 
 The percentages are app-level protection buckets, not a promise that Android or HyperOS will display the same visual percentage on every device.
+
+## Lux curve
+
+The protection policy uses smaller lux steps so brightness changes one bucket at a time instead of jumping across large ranges:
+
+- up to 8 lx -> 20%
+- up to 20 lx -> 25%
+- up to 60 lx -> 30%
+- up to 120 lx -> 35%
+- up to 250 lx -> 40%
+- up to 500 lx -> 45%
+- up to 1000 lx -> 50%
+- up to 2500 lx -> 55%
+- above 2500 lx -> 60%
 
 ## Quick Settings Tile
 
