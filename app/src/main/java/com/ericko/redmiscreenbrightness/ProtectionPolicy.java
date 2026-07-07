@@ -26,6 +26,21 @@ public final class ProtectionPolicy {
             8f, 20f, 60f, 120f, 250f, 500f, 1000f, 2500f, Float.MAX_VALUE
     };
 
+    private static final String[] BAND_KEYS = new String[] {
+            "0_8", "8_20", "20_60", "60_120", "120_250",
+            "250_500", "500_1000", "1000_2500", "2500_plus"
+    };
+
+    private static final String[] BAND_LABELS = new String[] {
+            "0-8 lx", "8-20 lx", "20-60 lx", "60-120 lx", "120-250 lx",
+            "250-500 lx", "500-1000 lx", "1000-2500 lx", "2500+ lx"
+    };
+
+    private static final int[] BAND_MAX_LEARNED = new int[] {
+            LEVEL_25, LEVEL_30, LEVEL_35, LEVEL_40, LEVEL_45,
+            LEVEL_50, LEVEL_55, LEVEL_60, LEVEL_60
+    };
+
     private static final float VERY_DARK_MAX_LUX = 12f;
     private static final float DIM_ROOM_MAX_LUX = 90f;
     private static final float ROOM_MAX_LUX = 350f;
@@ -105,16 +120,46 @@ public final class ProtectionPolicy {
         return "outdoor";
     }
 
+    public String getBandKey(float lux) {
+        int index = getBandIndex(lux);
+        return index < 0 ? "unknown" : BAND_KEYS[index];
+    }
+
+    public String getBandLabel(float lux) {
+        int index = getBandIndex(lux);
+        return index < 0 ? "unknown" : BAND_LABELS[index];
+    }
+
+    public int getBandDefaultPercent(float lux) {
+        int index = getBandIndex(lux);
+        return index < 0 ? LEVEL_20 : LEVELS[index];
+    }
+
+    public int getBandMaxLearnedPercent(float lux) {
+        int index = getBandIndex(lux);
+        return index < 0 ? -1 : BAND_MAX_LEARNED[index];
+    }
+
+    public boolean isSafeLearnedPercentForBand(float lux, int percent) {
+        int max = getBandMaxLearnedPercent(lux);
+        return max >= 0 && percent >= LEVEL_20 && percent <= max;
+    }
+
     private int getDesiredPercent(float lux) {
-        if (lux < 0f) {
-            return LEVEL_20;
+        int index = getBandIndex(lux);
+        return index < 0 ? LEVEL_20 : LEVELS[index];
+    }
+
+    private int getBandIndex(float lux) {
+        if (Float.isNaN(lux) || lux < 0f) {
+            return -1;
         }
         for (int i = 0; i < LUX_CEILINGS.length; i++) {
             if (lux <= LUX_CEILINGS[i]) {
-                return LEVELS[i];
+                return i;
             }
         }
-        return LEVEL_60;
+        return LUX_CEILINGS.length - 1;
     }
 
     private int getNextPercent(int percent) {
