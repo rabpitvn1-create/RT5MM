@@ -32,6 +32,9 @@ public final class ProtectionServiceHealth {
                 .putString(KEY_SERVICE_HEARTBEAT_REASON, safe(reason))
                 .putLong(KEY_SERVICE_STOPPED_AT, 0L)
                 .putString(KEY_SERVICE_STOP_REASON, "")
+                .putBoolean(KEY_FOREGROUND_ACTIVE, false)
+                .putString(KEY_FOREGROUND_REASON, "starting")
+                .putBoolean(KEY_SCREEN_RECEIVER_REGISTERED, false)
                 .apply();
     }
 
