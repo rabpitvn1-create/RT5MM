@@ -70,7 +70,7 @@ public class MainActivity extends Activity {
 
         setupText = new TextView(this);
         setupText.setTextSize(14);
-        setupText.setGravity(Gravity.START);
+        setupText.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams setupParams = new LinearLayout.LayoutParams(-1, -2);
         setupParams.setMargins(0, dp(20), 0, dp(12));
         root.addView(setupText, setupParams);
@@ -93,6 +93,7 @@ public class MainActivity extends Activity {
         addButton(root, toggleButton, 64);
 
         notificationButton = new Button(this);
+        notificationButton.setVisibility(View.GONE);
         notificationButton.setText("Grant Notification Permission");
         notificationButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -103,6 +104,7 @@ public class MainActivity extends Activity {
         addButton(root, notificationButton, 52);
 
         batteryButton = new Button(this);
+        batteryButton.setVisibility(View.GONE);
         batteryButton.setText("Disable Battery Optimization");
         batteryButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -113,6 +115,7 @@ public class MainActivity extends Activity {
         addButton(root, batteryButton, 52);
 
         hyperOsButton = new Button(this);
+        hyperOsButton.setVisibility(View.GONE);
         hyperOsButton.setText("Open HyperOS Background Setup");
         hyperOsButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -206,10 +209,17 @@ public class MainActivity extends Activity {
         }
 
         if (!isNotificationPermissionGranted()) {
+            BrightnessLogManager.appendSnapshot(this, "NOTIFICATION_PERMISSION_MISSING", AutoBrightnessManager.getLastLux(this));
             requestNotificationPermissionIfNeeded();
+            refreshStatus();
+            return;
         }
         if (!isBatteryOptimizationIgnored()) {
             BrightnessLogManager.appendSnapshot(this, "BATTERY_OPTIMIZATION_LIMITED", AutoBrightnessManager.getLastLux(this));
+            Toast.makeText(this, "Allow unrestricted battery first", Toast.LENGTH_LONG).show();
+            openBatterySetup();
+            refreshStatus();
+            return;
         }
 
         AutoBrightnessService.start(this);
@@ -237,26 +247,21 @@ public class MainActivity extends Activity {
         String setupState = getSetupState(canWrite, sensorOk, notificationOk, batteryOk);
         BrightnessLogManager.logSnapshotIfChanged(this, "MAIN_STATUS_REFRESH", AutoBrightnessManager.getLastLux(this));
 
-        if (!canWrite) {
-            toggleButton.setText("Grant Modify Settings");
+        if (!sensorOk) {
+            toggleButton.setText("Protection Unavailable");
+        } else if (!canWrite || !notificationOk || !batteryOk) {
+            toggleButton.setText("Set Up Protection");
         } else if (enabled && mode == AutoBrightnessManager.Mode.USER_HOLD) {
             toggleButton.setText("Restart Protection");
         } else {
             toggleButton.setText(enabled ? "Turn Protection Off" : "Turn Protection On");
         }
 
-        notificationButton.setVisibility(notificationOk ? View.GONE : View.VISIBLE);
-        batteryButton.setVisibility(batteryOk ? View.GONE : View.VISIBLE);
-        hyperOsButton.setVisibility(View.VISIBLE);
+        notificationButton.setVisibility(View.GONE);
+        batteryButton.setVisibility(View.GONE);
+        hyperOsButton.setVisibility(View.GONE);
 
-        setupText.setText(
-                "Power setup: " + setupState
-                        + "\n" + setupLine(canWrite, "Modify system settings")
-                        + setupLine(sensorOk, "Light sensor")
-                        + setupLine(notificationOk, "Foreground notification")
-                        + setupLine(batteryOk, "Battery unrestricted")
-                        + "[MANUAL] HyperOS Autostart / No restrictions / Lock in Recents"
-        );
+        setupText.setText("Power setup: " + setupState + " · one button handles the next required step");
 
         statusText.setText(
                 "Current: " + percent + "% / raw " + currentRaw
