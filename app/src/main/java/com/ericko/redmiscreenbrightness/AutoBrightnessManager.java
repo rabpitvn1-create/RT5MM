@@ -46,6 +46,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     private final SensorManager sensorManager;
     private final Sensor lightSensor;
     private final ProtectionPolicy protectionPolicy = new ProtectionPolicy();
+    private final ProtectionDecisionEngine decisionEngine = new ProtectionDecisionEngine(protectionPolicy);
     private final float[] samples = new float[SAMPLE_COUNT];
     private int sampleCount = 0;
     private int sampleIndex = 0;
@@ -140,8 +141,10 @@ public class AutoBrightnessManager implements SensorEventListener {
         if (isUserHoldActive(appContext, now)) {
             float holdLux = getUserHoldLux(appContext);
             if (!shouldReleaseUserHold(avgLux, holdLux)) {
+                ProtectionDecisionEngine.Decision decision = makeDecision(avgLux, now, true, -1);
+                updateCandidate(decision);
                 saveMode(appContext, Mode.USER_HOLD);
-                BrightnessLogManager.logSnapshotIfChanged(appContext, "USER_HOLD_ACTIVE", avgLux);
+                BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_DECISION_" + decision.toLogSuffix(), avgLux);
                 return;
             }
             clearUserHold(appContext);
@@ -156,20 +159,46 @@ public class AutoBrightnessManager implements SensorEventListener {
             return;
         }
 
-        int currentPercent = BrightnessLevels.getCurrentPercent(appContext);
-        int targetPercent = getTargetPercent(avgLux, currentPercent);
-        if (candidatePercent != targetPercent) {
-            candidatePercent = targetPercent;
-            candidateSince = now;
-            BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_TARGET_" + targetPercent + "_PERCENT", avgLux);
-            return;
-        }
-        long stableMs = protectionPolicy.getStableMs(currentPercent, targetPercent);
-        if (now - candidateSince < stableMs) {
+        ProtectionDecisionEngine.Decision decision = makeDecision(avgLux, now, false, getSafeLearnedPercent(avgLux));
+        updateCandidate(decision);
+        BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_DECISION_" + decision.toLogSuffix(), avgLux);
+
+        if (decision.action == ProtectionDecisionEngine.Action.APPLY) {
+            applyAutoPercent(decision.targetPercent);
             return;
         }
 
-        applyAutoPercent(targetPercent);
+        if (decision.action == ProtectionDecisionEngine.Action.HOLD) {
+            if (decision.reason == ProtectionDecisionEngine.Reason.SAME_BUCKET && getLastAutoRaw(appContext) < 0) {
+                saveLastAutoRaw(appContext, decision.targetRaw);
+            }
+            saveMode(appContext, Mode.PROTECTING);
+        }
+    }
+
+    private ProtectionDecisionEngine.Decision makeDecision(float lux, long now, boolean userHoldActive, int learnedPercent) {
+        int currentPercent = BrightnessLevels.getCurrentPercent(appContext);
+        int currentRaw = BrightnessLevels.getSystemRaw(appContext, BrightnessLevels.getRawForPercent(currentPercent));
+        return decisionEngine.decide(new ProtectionDecisionEngine.Request(
+                lux,
+                currentPercent,
+                currentRaw,
+                candidatePercent,
+                candidateSince,
+                now,
+                userHoldActive,
+                true,
+                learnedPercent,
+                RAW_CHANGE_TOLERANCE
+        ));
+    }
+
+    private void updateCandidate(ProtectionDecisionEngine.Decision decision) {
+        if (decision == null) {
+            return;
+        }
+        candidatePercent = decision.nextCandidatePercent;
+        candidateSince = decision.nextCandidateSince;
     }
 
     private void applyAutoPercent(int percent) {
@@ -194,21 +223,13 @@ public class AutoBrightnessManager implements SensorEventListener {
         }
     }
 
-    private int getTargetPercent(float lux, int currentPercent) {
-        int baseTarget = protectionPolicy.getTargetPercent(lux, currentPercent);
-        int learnedTarget = getLearnedPercent(appContext, lux);
-        if (learnedTarget < 0) {
-            return baseTarget;
-        }
-        return chooseLearnedTarget(lux, baseTarget, learnedTarget);
-    }
-
-    private int chooseLearnedTarget(float lux, int baseTarget, int learnedTarget) {
+    private int getSafeLearnedPercent(float lux) {
+        int learnedPercent = getLearnedPercent(appContext, lux);
         String profile = protectionPolicy.getProfileName(lux);
-        if (!isLearnablePercentForProfile(profile, learnedTarget)) {
-            return baseTarget;
+        if (!isLearnablePercentForProfile(profile, learnedPercent)) {
+            return -1;
         }
-        return learnedTarget;
+        return learnedPercent;
     }
 
     private boolean detectUserBrightnessChange(long now, float avgLux) {
