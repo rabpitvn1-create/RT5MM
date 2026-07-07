@@ -23,9 +23,6 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final String KEY_IGNORE_EXTERNAL_UNTIL = "auto_brightness_ignore_external_until";
     private static final String KEY_EXTERNAL_CANDIDATE_RAW = "auto_brightness_external_candidate_raw";
     private static final String KEY_EXTERNAL_CANDIDATE_SINCE = "auto_brightness_external_candidate_since";
-    private static final String KEY_LEARNED_PERCENT_PREFIX = "protection_learned_percent_";
-    private static final String KEY_LEARNING_PENDING_PERCENT_PREFIX = "protection_learning_pending_percent_";
-    private static final String KEY_LEARNING_CONFIRM_COUNT_PREFIX = "protection_learning_confirm_count_";
     private static final String KEY_LAST_DECISION_AT = "protection_last_decision_at";
     private static final String KEY_LAST_DECISION_ACTION = "protection_last_decision_action";
     private static final String KEY_LAST_DECISION_REASON = "protection_last_decision_reason";
@@ -40,7 +37,6 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final int SAMPLE_COUNT = 5;
     private static final int RAW_CHANGE_TOLERANCE = 0;
     private static final int USER_CHANGE_MIN_RAW = 6;
-    private static final int REQUIRED_LEARNING_CONFIRMATIONS = 2;
     private static final long APP_WRITE_GRACE_MS = 12000L;
     private static final long USER_INTENT_STABLE_MS = 3000L;
     private static final long WRITE_BUDGET_MS = 6000L;
@@ -249,12 +245,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     private int getSafeLearnedPercent(float lux) {
-        int learnedPercent = getLearnedPercent(appContext, lux);
-        String profile = protectionPolicy.getProfileName(lux);
-        if (!isLearnablePercentForProfile(profile, learnedPercent)) {
-            return -1;
-        }
-        return learnedPercent;
+        return ProtectionLearningStore.getSafeLearnedPercent(appContext, lux);
     }
 
     private boolean detectUserBrightnessChange(long now, float avgLux) {
@@ -377,64 +368,12 @@ public class AutoBrightnessManager implements SensorEventListener {
                 .remove(KEY_EXTERNAL_CANDIDATE_SINCE)
                 .apply();
         BrightnessLevels.saveCurrentPercent(context, percent);
-        maybeLearnUserPreference(context, lux, percent, event);
+        ProtectionLearningStore.recordUserPreference(context, lux, percent, event);
         BrightnessLogManager.appendSnapshot(context, event, lux);
     }
 
-    private static void maybeLearnUserPreference(Context context, float lux, int percent, String event) {
-        ProtectionPolicy policy = new ProtectionPolicy();
-        String profile = policy.getProfileName(lux);
-        if (!isLearnablePercentForProfile(profile, percent)) {
-            BrightnessLogManager.appendSnapshot(context, "LEARNING_SKIPPED_" + safeProfileKey(profile) + "_" + percent + "_PERCENT", lux);
-            return;
-        }
-
-        SharedPreferences prefs = getPrefs(context);
-        String profileKey = safeProfileKey(profile);
-        String pendingKey = KEY_LEARNING_PENDING_PERCENT_PREFIX + profileKey;
-        String countKey = KEY_LEARNING_CONFIRM_COUNT_PREFIX + profileKey;
-        int pendingPercent = prefs.getInt(pendingKey, -1);
-        int count = pendingPercent == percent ? prefs.getInt(countKey, 0) + 1 : 1;
-
-        SharedPreferences.Editor editor = prefs.edit()
-                .putInt(pendingKey, percent)
-                .putInt(countKey, count);
-
-        if (count >= REQUIRED_LEARNING_CONFIRMATIONS) {
-            editor.putInt(KEY_LEARNED_PERCENT_PREFIX + profileKey, percent);
-            BrightnessLogManager.appendSnapshot(context, "LEARNED_" + profileKey + "_" + percent + "_PERCENT", lux);
-        } else {
-            BrightnessLogManager.appendSnapshot(context, "LEARNING_PENDING_" + profileKey + "_" + percent + "_PERCENT", lux);
-        }
-        editor.apply();
-    }
-
     private static int getLearnedPercent(Context context, float lux) {
-        String profile = new ProtectionPolicy().getProfileName(lux);
-        return getPrefs(context).getInt(KEY_LEARNED_PERCENT_PREFIX + safeProfileKey(profile), -1);
-    }
-
-    private static boolean isLearnablePercentForProfile(String profile, int percent) {
-        if (percent < ProtectionPolicy.LEVEL_20 || percent > ProtectionPolicy.LEVEL_60) {
-            return false;
-        }
-        if ("very dark".equals(profile)) {
-            return percent <= ProtectionPolicy.LEVEL_30;
-        }
-        if ("dim room".equals(profile)) {
-            return percent <= ProtectionPolicy.LEVEL_40;
-        }
-        if ("room".equals(profile)) {
-            return percent <= ProtectionPolicy.LEVEL_50;
-        }
-        if ("bright room".equals(profile) || "outdoor".equals(profile)) {
-            return percent <= ProtectionPolicy.LEVEL_60;
-        }
-        return false;
-    }
-
-    private static String safeProfileKey(String profile) {
-        return profile == null ? "unknown" : profile.replace(' ', '_').toLowerCase(Locale.US);
+        return ProtectionLearningStore.getLearnedPercent(context, lux);
     }
 
     public static long getCooldownRemainingMs(Context context) {
@@ -489,10 +428,11 @@ public class AutoBrightnessManager implements SensorEventListener {
         ProtectionPolicy policy = new ProtectionPolicy();
         String profile = policy.getProfileName(lastLux);
         int learnedPercent = getLearnedPercent(context, lastLux);
+        int learnedConfidence = ProtectionLearningStore.getConfidence(context, lastLux);
 
         String luxText = lastLux < 0f ? "unknown" : String.format(Locale.US, "%.1f lx", lastLux);
         String holdText = hold > 0L ? (hold / 1000L) + "s" + (holdRaw >= 0 ? " / raw " + holdRaw : "") : "inactive";
-        String learnedText = learnedPercent > 0 ? learnedPercent + "%" : "none";
+        String learnedText = learnedPercent > 0 ? learnedPercent + "% / conf " + learnedConfidence : "none";
 
         return "Protection: " + (enabled ? "On" : "Off")
                 + "\nLux: " + luxText + " / " + profile
@@ -538,7 +478,8 @@ public class AutoBrightnessManager implements SensorEventListener {
                 + "\nLast write: " + lastWriteText
                 + "\nLast decision: " + decisionAgeText
                 + "\nUser hold: " + holdText
-                + "\nLearned: " + learnedText;
+                + "\nLearned: " + learnedText
+                + "\n\n" + ProtectionLearningStore.getDiagnosticText(context, lastLux);
     }
 
     public static String getDisplayMode(Mode mode) {
