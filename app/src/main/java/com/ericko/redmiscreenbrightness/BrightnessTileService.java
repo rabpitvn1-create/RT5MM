@@ -1,8 +1,8 @@
 package com.ericko.redmiscreenbrightness;
 
-import android.content.Context;
 import android.graphics.drawable.Icon;
 import android.os.Build;
+import android.provider.Settings;
 import android.service.quicksettings.Tile;
 import android.service.quicksettings.TileService;
 import android.widget.Toast;
@@ -12,7 +12,7 @@ public class BrightnessTileService extends TileService {
     @Override
     public void onTileAdded() {
         super.onTileAdded();
-        updateTileView(BrightnessLevels.getCurrentPercent(this));
+        updateTileView();
     }
 
     @Override
@@ -21,39 +21,40 @@ public class BrightnessTileService extends TileService {
         if (AutoBrightnessManager.isAutoEnabled(this)) {
             AutoBrightnessService.start(this);
         }
-        updateTileView(BrightnessLevels.getCurrentPercent(this));
+        updateTileView();
     }
 
     @Override
     public void onClick() {
         super.onClick();
 
-        int current = BrightnessLevels.getCurrentPercent(this);
-        int next = BrightnessLevels.getNextPercent(current);
-        int raw = BrightnessLevels.getRawForPercent(next);
-
-        boolean ok = applyBrightness(this, next, raw);
-        if (ok) {
-            AutoBrightnessManager.recordManualOverride(this);
-            AutoBrightnessService.refresh(this);
-            updateTileView(next);
-            Toast.makeText(this, "Brightness " + next + "%", Toast.LENGTH_SHORT).show();
-        } else {
-            updateTileView(current);
-            Toast.makeText(this, "Grant modify system settings permission", Toast.LENGTH_SHORT).show();
+        if (AutoBrightnessManager.isAutoEnabled(this)) {
+            AutoBrightnessService.stop(this);
+            BrightnessLogManager.appendSnapshot(this, "TILE_PROTECTION_DISABLED", AutoBrightnessManager.getLastLux(this));
+            Toast.makeText(this, "Screen Protection off", Toast.LENGTH_SHORT).show();
+            updateTileView();
+            return;
         }
-    }
 
-    public static boolean applyBrightness(Context context, int percent) {
-        return BrightnessLevels.applyBrightness(context, percent);
-    }
+        if (!Settings.System.canWrite(this)) {
+            BrightnessLogManager.appendSnapshot(this, "TILE_WRITE_SETTINGS_MISSING", AutoBrightnessManager.getLastLux(this));
+            Toast.makeText(this, "Open app to grant modify system settings", Toast.LENGTH_LONG).show();
+            updateTileView();
+            return;
+        }
 
-    public static boolean applyBrightness(Context context, int percent, int raw) {
-        return BrightnessLevels.applyBrightness(context, percent, raw);
-    }
+        if (!AutoBrightnessManager.hasLightSensor(this)) {
+            AutoBrightnessManager.markUnavailable(this);
+            BrightnessLogManager.appendSnapshot(this, "TILE_PROTECTION_UNAVAILABLE", AutoBrightnessManager.getLastLux(this));
+            Toast.makeText(this, "Light sensor unavailable", Toast.LENGTH_SHORT).show();
+            updateTileView();
+            return;
+        }
 
-    public static int getRawForPercent(int percent) {
-        return BrightnessLevels.getRawForPercent(percent);
+        AutoBrightnessService.start(this);
+        BrightnessLogManager.appendSnapshot(this, "TILE_PROTECTION_ENABLED", AutoBrightnessManager.getLastLux(this));
+        Toast.makeText(this, "Screen Protection on", Toast.LENGTH_SHORT).show();
+        updateTileView();
     }
 
     private int getIconForPercent(int percent) {
@@ -64,17 +65,20 @@ public class BrightnessTileService extends TileService {
         return R.drawable.ic_tile_30;
     }
 
-    private void updateTileView(int percent) {
+    private void updateTileView() {
         Tile tile = getQsTile();
         if (tile == null) {
             return;
         }
-        tile.setLabel("Redmi Brightness " + percent + "%");
+
+        boolean enabled = AutoBrightnessManager.isAutoEnabled(this);
+        int percent = BrightnessLevels.getCurrentPercent(this);
+        tile.setLabel(enabled ? "Screen Protection" : "Protection Off");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.setSubtitle(percent + "%");
+            tile.setSubtitle(enabled ? percent + "% protected" : "Tap to protect");
         }
         tile.setIcon(Icon.createWithResource(this, getIconForPercent(percent)));
-        tile.setState(Tile.STATE_ACTIVE);
+        tile.setState(enabled ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
         tile.updateTile();
     }
 }
