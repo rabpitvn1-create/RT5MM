@@ -8,29 +8,32 @@ package com.ericko.redmiscreenbrightness;
  */
 public final class ProtectionPolicy {
     public static final int LEVEL_20 = 20;
+    public static final int LEVEL_25 = 25;
     public static final int LEVEL_30 = 30;
+    public static final int LEVEL_35 = 35;
     public static final int LEVEL_40 = 40;
+    public static final int LEVEL_45 = 45;
     public static final int LEVEL_50 = 50;
+    public static final int LEVEL_55 = 55;
     public static final int LEVEL_60 = 60;
+
+    private static final int[] LEVELS = new int[] {
+            LEVEL_20, LEVEL_25, LEVEL_30, LEVEL_35, LEVEL_40,
+            LEVEL_45, LEVEL_50, LEVEL_55, LEVEL_60
+    };
+
+    private static final float[] LUX_CEILINGS = new float[] {
+            8f, 20f, 60f, 120f, 250f, 500f, 1000f, 2500f, Float.MAX_VALUE
+    };
 
     private static final float VERY_DARK_MAX_LUX = 12f;
     private static final float DIM_ROOM_MAX_LUX = 90f;
     private static final float ROOM_MAX_LUX = 350f;
     private static final float BRIGHT_ROOM_MAX_LUX = 2100f;
 
-    private static final float STEP_UP_20_TO_30_LUX = 30f;
-    private static final float STEP_UP_30_TO_40_LUX = 160f;
-    private static final float STEP_UP_40_TO_50_LUX = 650f;
-    private static final float STEP_UP_50_TO_60_LUX = 3500f;
-
-    private static final float STEP_DOWN_30_TO_20_LUX = 12f;
-    private static final float STEP_DOWN_40_TO_30_LUX = 90f;
-    private static final float STEP_DOWN_50_TO_40_LUX = 350f;
-    private static final float STEP_DOWN_60_TO_50_LUX = 2100f;
-
-    private static final long STABLE_UP_MS = 2500L;
-    private static final long STABLE_DOWN_MS = 7000L;
-    private static final long STABLE_SAME_MS = 2500L;
+    private static final long STABLE_UP_MS = 2200L;
+    private static final long STABLE_DOWN_MS = 6500L;
+    private static final long STABLE_SAME_MS = 2000L;
 
     private static final float SUDDEN_DARK_MAX_LUX = 3f;
     private static final float SUDDEN_DARK_DROP_RATIO = 0.18f;
@@ -70,27 +73,15 @@ public final class ProtectionPolicy {
     }
 
     public int getTargetPercent(float lux, int currentPercent) {
-        int normalizedCurrent = normalizePercent(currentPercent);
-        if (normalizedCurrent <= LEVEL_20) {
-            return lux > STEP_UP_20_TO_30_LUX ? LEVEL_30 : LEVEL_20;
+        int current = normalizePercent(currentPercent);
+        int desired = getDesiredPercent(lux);
+        if (desired > current) {
+            return getNextPercent(current);
         }
-        if (normalizedCurrent == LEVEL_30) {
-            if (lux < STEP_DOWN_30_TO_20_LUX) return LEVEL_20;
-            if (lux > STEP_UP_30_TO_40_LUX) return LEVEL_40;
-            return LEVEL_30;
+        if (desired < current) {
+            return getPreviousPercent(current);
         }
-        if (normalizedCurrent == LEVEL_40) {
-            if (lux < STEP_DOWN_40_TO_30_LUX) return LEVEL_30;
-            if (lux > STEP_UP_40_TO_50_LUX) return LEVEL_50;
-            return LEVEL_40;
-        }
-        if (normalizedCurrent == LEVEL_50) {
-            if (lux < STEP_DOWN_50_TO_40_LUX) return LEVEL_40;
-            if (lux > STEP_UP_50_TO_60_LUX) return LEVEL_60;
-            return LEVEL_50;
-        }
-        if (lux < STEP_DOWN_60_TO_50_LUX) return LEVEL_50;
-        return LEVEL_60;
+        return current;
     }
 
     public long getStableMs(int currentPercent, int targetPercent) {
@@ -114,11 +105,48 @@ public final class ProtectionPolicy {
         return "outdoor";
     }
 
-    private int normalizePercent(int percent) {
-        if (percent <= LEVEL_20) return LEVEL_20;
-        if (percent <= LEVEL_30) return LEVEL_30;
-        if (percent <= LEVEL_40) return LEVEL_40;
-        if (percent <= LEVEL_50) return LEVEL_50;
+    private int getDesiredPercent(float lux) {
+        if (lux < 0f) {
+            return LEVEL_20;
+        }
+        for (int i = 0; i < LUX_CEILINGS.length; i++) {
+            if (lux <= LUX_CEILINGS[i]) {
+                return LEVELS[i];
+            }
+        }
         return LEVEL_60;
+    }
+
+    private int getNextPercent(int percent) {
+        int current = normalizePercent(percent);
+        for (int i = 0; i < LEVELS.length - 1; i++) {
+            if (LEVELS[i] == current) {
+                return LEVELS[i + 1];
+            }
+        }
+        return LEVEL_60;
+    }
+
+    private int getPreviousPercent(int percent) {
+        int current = normalizePercent(percent);
+        for (int i = 1; i < LEVELS.length; i++) {
+            if (LEVELS[i] == current) {
+                return LEVELS[i - 1];
+            }
+        }
+        return LEVEL_20;
+    }
+
+    private int normalizePercent(int percent) {
+        int best = LEVELS[0];
+        int bestDistance = Math.abs(percent - best);
+        for (int i = 1; i < LEVELS.length; i++) {
+            int distance = Math.abs(percent - LEVELS[i]);
+            if (distance < bestDistance) {
+                best = LEVELS[i];
+                bestDistance = distance;
+            }
+        }
+        return best;
     }
 }
