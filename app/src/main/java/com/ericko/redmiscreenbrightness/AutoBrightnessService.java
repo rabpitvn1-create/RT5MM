@@ -40,6 +40,7 @@ public class AutoBrightnessService extends Service {
                 return;
             }
             String action = intent.getAction();
+            ProtectionServiceHealth.markHeartbeat(AutoBrightnessService.this, "SCREEN_EVENT");
             if (Intent.ACTION_SCREEN_ON.equals(action) || Intent.ACTION_USER_PRESENT.equals(action)) {
                 if (manager == null) {
                     manager = new AutoBrightnessManager(AutoBrightnessService.this);
@@ -54,6 +55,7 @@ public class AutoBrightnessService extends Service {
     private final Runnable notificationRefreshRunnable = new Runnable() {
         @Override
         public void run() {
+            ProtectionServiceHealth.markHeartbeat(AutoBrightnessService.this, "NOTIFICATION_REFRESH");
             updateNotification(false);
             if (handler != null && AutoBrightnessManager.isAutoEnabled(AutoBrightnessService.this)) {
                 handler.postDelayed(this, NOTIFICATION_REFRESH_MS);
@@ -67,6 +69,7 @@ public class AutoBrightnessService extends Service {
             if (handler == null || !AutoBrightnessManager.isAutoEnabled(AutoBrightnessService.this)) {
                 return;
             }
+            ProtectionServiceHealth.markHeartbeat(AutoBrightnessService.this, "PROTECTION_INTERVAL_TICK");
             if (manager != null) {
                 manager.evaluateLastLux("PROTECTION_INTERVAL_TICK");
             }
@@ -78,6 +81,7 @@ public class AutoBrightnessService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        ProtectionServiceHealth.markServiceCreated(this, "SERVICE_CREATED");
         handler = new Handler(Looper.getMainLooper());
         manager = new AutoBrightnessManager(this);
         createNotificationChannel();
@@ -87,6 +91,7 @@ public class AutoBrightnessService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? ACTION_START : intent.getAction();
+        ProtectionServiceHealth.markHeartbeat(this, "SERVICE_START_COMMAND");
 
         if (ACTION_STOP.equals(action) || !AutoBrightnessManager.isAutoEnabled(this)) {
             shutdownAndStop();
@@ -95,6 +100,7 @@ public class AutoBrightnessService extends Service {
 
         if (!AutoBrightnessManager.hasLightSensor(this)) {
             AutoBrightnessManager.markUnavailable(this);
+            ProtectionServiceHealth.markServiceStopped(this, "LIGHT_SENSOR_UNAVAILABLE");
             shutdownAndStop();
             return START_NOT_STICKY;
         }
@@ -107,11 +113,13 @@ public class AutoBrightnessService extends Service {
             manager = new AutoBrightnessManager(this);
         }
         manager.start();
+        ProtectionServiceHealth.markHeartbeat(this, "SERVICE_RUNNING");
         scheduleNotificationRefresh();
         scheduleProtectionUpdates();
 
         if (ACTION_REFRESH.equals(action)) {
             manager.evaluateLastLux("PROTECTION_REFRESH_REQUEST");
+            ProtectionServiceHealth.markHeartbeat(this, "PROTECTION_REFRESH_REQUEST");
             updateNotification(true);
         }
 
@@ -130,6 +138,7 @@ public class AutoBrightnessService extends Service {
             manager = null;
         }
         stopForegroundCompat();
+        ProtectionServiceHealth.markServiceStopped(this, "SERVICE_DESTROYED");
         super.onDestroy();
     }
 
@@ -147,9 +156,12 @@ public class AutoBrightnessService extends Service {
                 startForeground(NOTIFICATION_ID, notification);
             }
             foregroundStarted = true;
+            ProtectionServiceHealth.markForeground(this, true, "FOREGROUND_STARTED");
+            ProtectionServiceHealth.markHeartbeat(this, "FOREGROUND_STARTED");
             lastNotificationSignature = buildNotificationSignature();
         } catch (Throwable t) {
             AutoBrightnessManager.setAutoEnabled(this, false);
+            ProtectionServiceHealth.markServiceStopped(this, "FOREGROUND_START_FAILED");
             stopSelf();
         }
     }
@@ -244,6 +256,7 @@ public class AutoBrightnessService extends Service {
     }
 
     private void shutdownAndStop() {
+        ProtectionServiceHealth.markServiceStopped(this, "SERVICE_STOPPED");
         if (handler != null) {
             handler.removeCallbacks(notificationRefreshRunnable);
             handler.removeCallbacks(protectionUpdateRunnable);
@@ -267,6 +280,7 @@ public class AutoBrightnessService extends Service {
         } catch (Throwable ignored) {
         }
         foregroundStarted = false;
+        ProtectionServiceHealth.markForeground(this, false, "FOREGROUND_STOPPED");
     }
 
     private void registerScreenReceiver() {
@@ -286,10 +300,12 @@ public class AutoBrightnessService extends Service {
         } catch (Throwable ignored) {
             screenReceiverRegistered = false;
         }
+        ProtectionServiceHealth.markScreenReceiver(this, screenReceiverRegistered);
     }
 
     private void unregisterScreenReceiver() {
         if (!screenReceiverRegistered) {
+            ProtectionServiceHealth.markScreenReceiver(this, false);
             return;
         }
         try {
@@ -297,6 +313,7 @@ public class AutoBrightnessService extends Service {
         } catch (Throwable ignored) {
         }
         screenReceiverRegistered = false;
+        ProtectionServiceHealth.markScreenReceiver(this, false);
     }
 
     private void createNotificationChannel() {
@@ -325,33 +342,34 @@ public class AutoBrightnessService extends Service {
 
     public static void start(Context context) {
         AutoBrightnessManager.setAutoEnabled(context, true);
-        startServiceWithAction(context, ACTION_START);
-    }
-
-    public static void refresh(Context context) {
-        if (AutoBrightnessManager.isAutoEnabled(context)) {
-            startServiceWithAction(context, ACTION_REFRESH);
+        Intent intent = new Intent(context, AutoBrightnessService.class);
+        intent.setAction(ACTION_START);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent);
+        } else {
+            context.startService(intent);
         }
     }
 
     public static void stop(Context context) {
         AutoBrightnessManager.setAutoEnabled(context, false);
-        startServiceWithAction(context, ACTION_STOP);
+        ProtectionServiceHealth.markServiceStopped(context, "USER_STOP_REQUEST");
+        Intent intent = new Intent(context, AutoBrightnessService.class);
+        intent.setAction(ACTION_STOP);
+        try {
+            context.startService(intent);
+        } catch (Throwable t) {
+            context.stopService(intent);
+        }
     }
 
-    private static void startServiceWithAction(Context context, String action) {
-        try {
-            Intent intent = new Intent(context.getApplicationContext(), AutoBrightnessService.class);
-            intent.setAction(action);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.getApplicationContext().startForegroundService(intent);
-            } else {
-                context.getApplicationContext().startService(intent);
-            }
-        } catch (Throwable t) {
-            if (!ACTION_STOP.equals(action)) {
-                AutoBrightnessManager.setAutoEnabled(context, false);
-            }
+    public static void refresh(Context context) {
+        Intent intent = new Intent(context, AutoBrightnessService.class);
+        intent.setAction(ACTION_REFRESH);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent);
+        } else {
+            context.startService(intent);
         }
     }
 }
