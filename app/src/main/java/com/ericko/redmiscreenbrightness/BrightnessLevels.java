@@ -14,8 +14,14 @@ public final class BrightnessLevels {
      * Keep these raw values conservative for Redmi/HyperOS to protect the screen,
      * reduce eye strain, and save battery.
      */
-    private static final int[] PERCENTS = new int[] {20, 25, 30, 35, 40, 45, 50, 55, 60};
-    private static final int[] RAW_VALUES = new int[] {11, 14, 17, 22, 26, 32, 38, 44, 49};
+    private static final int[] PERCENTS = new int[] {
+            20, 23, 25, 28, 30, 33, 35, 38, 40,
+            43, 45, 48, 50, 53, 55, 58, 60
+    };
+    private static final int[] RAW_VALUES = new int[] {
+            11, 13, 14, 16, 17, 20, 22, 24, 26,
+            29, 32, 35, 38, 41, 44, 47, 49
+    };
 
     private static final int MIN_RAW = 1;
     private static final int MAX_RAW = 255;
