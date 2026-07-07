@@ -25,8 +25,8 @@ Internal behavior:
 These are the raw values currently used by the app:
 
 - 20% = raw 11
-- 30% = raw 19
-- 40% = raw 28
+- 30% = raw 17
+- 40% = raw 26
 - 50% = raw 38
 - 60% = raw 49
 
