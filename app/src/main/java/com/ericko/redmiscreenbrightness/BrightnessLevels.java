@@ -15,7 +15,7 @@ public final class BrightnessLevels {
      * reduce eye strain, and save battery.
      */
     private static final int[] PERCENTS = new int[] {20, 30, 40, 50, 60};
-    private static final int[] RAW_VALUES = new int[] {11, 19, 28, 38, 49};
+    private static final int[] RAW_VALUES = new int[] {11, 17, 26, 38, 49};
 
     private static final int MIN_RAW = 1;
     private static final int MAX_RAW = 255;
