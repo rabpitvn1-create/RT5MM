@@ -253,7 +253,6 @@ public class MainActivity extends Activity {
         boolean sensorOk = AutoBrightnessManager.hasLightSensor(this);
         boolean notificationOk = isNotificationPermissionGranted();
         boolean batteryOk = isBatteryOptimizationIgnored();
-        int currentRaw = BrightnessLevels.getSystemRaw(this, -1);
         int percent = BrightnessLevels.getCurrentPercent(this);
         String setupState = getSetupState(canWrite, sensorOk, notificationOk, batteryOk);
         BrightnessLogManager.logSnapshotIfChanged(this, "MAIN_STATUS_REFRESH", AutoBrightnessManager.getLastLux(this));
@@ -276,12 +275,51 @@ public class MainActivity extends Activity {
             setupText.setText("Diagnostic mode · long-press status or button to hide");
             statusText.setText(AutoBrightnessManager.getDiagnosticText(this));
         } else {
-            setupText.setText("Power setup: " + setupState + " · one button handles the next required step");
-            statusText.setText(
-                    "Current: " + percent + "% / raw " + currentRaw
-                            + "\n" + AutoBrightnessManager.getStatusText(this)
-            );
+            setupText.setText(getSetupMessage(canWrite, sensorOk, notificationOk, batteryOk, setupState));
+            statusText.setText(getMainStatusText(enabled, mode, sensorOk, percent));
         }
+    }
+
+    private String getMainStatusText(boolean enabled, AutoBrightnessManager.Mode mode, boolean sensorOk, int percent) {
+        String state;
+        if (!sensorOk || mode == AutoBrightnessManager.Mode.UNAVAILABLE) {
+            state = "Protection unavailable";
+        } else if (enabled && mode == AutoBrightnessManager.Mode.USER_HOLD) {
+            state = "Holding your brightness";
+        } else if (enabled) {
+            state = "Protecting your screen";
+        } else {
+            state = "Protection off";
+        }
+
+        return state
+                + "\nLight: " + getLightText()
+                + "\nBrightness: " + percent + "%"
+                + "\nLong-press for diagnostics";
+    }
+
+    private String getLightText() {
+        float lux = AutoBrightnessManager.getLastLux(this);
+        if (lux < 0f) {
+            return "unknown";
+        }
+        return new ProtectionPolicy().getProfileName(lux);
+    }
+
+    private String getSetupMessage(boolean canWrite, boolean sensorOk, boolean notificationOk, boolean batteryOk, String setupState) {
+        if (!sensorOk) {
+            return "Light sensor unavailable";
+        }
+        if (!canWrite) {
+            return "Setup needed: allow modify system settings";
+        }
+        if (!notificationOk) {
+            return "Setup needed: allow notifications";
+        }
+        if (!batteryOk) {
+            return "Setup needed: allow unrestricted battery";
+        }
+        return "Setup: " + setupState;
     }
 
     private void toggleDiagnosticMode() {
