@@ -8,37 +8,56 @@ package com.ericko.redmiscreenbrightness;
  */
 public final class ProtectionPolicy {
     public static final int LEVEL_20 = 20;
+    public static final int LEVEL_23 = 23;
     public static final int LEVEL_25 = 25;
+    public static final int LEVEL_28 = 28;
     public static final int LEVEL_30 = 30;
+    public static final int LEVEL_33 = 33;
     public static final int LEVEL_35 = 35;
+    public static final int LEVEL_38 = 38;
     public static final int LEVEL_40 = 40;
+    public static final int LEVEL_43 = 43;
     public static final int LEVEL_45 = 45;
+    public static final int LEVEL_48 = 48;
     public static final int LEVEL_50 = 50;
+    public static final int LEVEL_53 = 53;
     public static final int LEVEL_55 = 55;
+    public static final int LEVEL_58 = 58;
     public static final int LEVEL_60 = 60;
 
     private static final int[] LEVELS = new int[] {
-            LEVEL_20, LEVEL_25, LEVEL_30, LEVEL_35, LEVEL_40,
-            LEVEL_45, LEVEL_50, LEVEL_55, LEVEL_60
+            LEVEL_20, LEVEL_23, LEVEL_25, LEVEL_28, LEVEL_30,
+            LEVEL_33, LEVEL_35, LEVEL_38, LEVEL_40, LEVEL_43,
+            LEVEL_45, LEVEL_48, LEVEL_50, LEVEL_53, LEVEL_55,
+            LEVEL_58, LEVEL_60
     };
 
     private static final float[] LUX_CEILINGS = new float[] {
-            8f, 20f, 60f, 120f, 250f, 500f, 1000f, 2500f, Float.MAX_VALUE
+            8f, 13f, 20f, 35f, 60f,
+            85f, 120f, 175f, 250f, 355f,
+            500f, 710f, 1000f, 1580f, 2500f,
+            5000f, Float.MAX_VALUE
     };
 
     private static final String[] BAND_KEYS = new String[] {
-            "0_8", "8_20", "20_60", "60_120", "120_250",
-            "250_500", "500_1000", "1000_2500", "2500_plus"
+            "0_8", "8_13", "13_20", "20_35", "35_60",
+            "60_85", "85_120", "120_175", "175_250", "250_355",
+            "355_500", "500_710", "710_1000", "1000_1580", "1580_2500",
+            "2500_5000", "5000_plus"
     };
 
     private static final String[] BAND_LABELS = new String[] {
-            "0-8 lx", "8-20 lx", "20-60 lx", "60-120 lx", "120-250 lx",
-            "250-500 lx", "500-1000 lx", "1000-2500 lx", "2500+ lx"
+            "0-8 lx", "8-13 lx", "13-20 lx", "20-35 lx", "35-60 lx",
+            "60-85 lx", "85-120 lx", "120-175 lx", "175-250 lx", "250-355 lx",
+            "355-500 lx", "500-710 lx", "710-1000 lx", "1000-1580 lx", "1580-2500 lx",
+            "2500-5000 lx", "5000+ lx"
     };
 
     private static final int[] BAND_MAX_LEARNED = new int[] {
-            LEVEL_25, LEVEL_30, LEVEL_35, LEVEL_40, LEVEL_45,
-            LEVEL_50, LEVEL_55, LEVEL_60, LEVEL_60
+            LEVEL_23, LEVEL_25, LEVEL_28, LEVEL_30, LEVEL_33,
+            LEVEL_35, LEVEL_38, LEVEL_40, LEVEL_43, LEVEL_45,
+            LEVEL_48, LEVEL_50, LEVEL_53, LEVEL_55, LEVEL_58,
+            LEVEL_60, LEVEL_60
     };
 
     private static final float VERY_DARK_MAX_LUX = 12f;
@@ -46,9 +65,9 @@ public final class ProtectionPolicy {
     private static final float ROOM_MAX_LUX = 350f;
     private static final float BRIGHT_ROOM_MAX_LUX = 2100f;
 
-    private static final long STABLE_UP_MS = 2200L;
-    private static final long STABLE_DOWN_MS = 6500L;
-    private static final long STABLE_SAME_MS = 2000L;
+    private static final long STABLE_UP_MS = 1800L;
+    private static final long STABLE_DOWN_MS = 5200L;
+    private static final long STABLE_SAME_MS = 1600L;
 
     private static final float SUDDEN_DARK_MAX_LUX = 3f;
     private static final float SUDDEN_DARK_DROP_RATIO = 0.18f;
