@@ -170,7 +170,7 @@ public class MainActivity extends Activity {
 
         boolean enabled = AutoBrightnessManager.isAutoEnabled(this);
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
-        if (enabled && mode == AutoBrightnessManager.Mode.MANUAL_OVERRIDE) {
+        if (enabled && mode == AutoBrightnessManager.Mode.USER_HOLD) {
             AutoBrightnessService.refresh(this);
             BrightnessLogManager.appendSnapshot(this, "PROTECTION_RESTART_FROM_BUTTON", AutoBrightnessManager.getLastLux(this));
             Toast.makeText(this, "Screen Protection restarted", Toast.LENGTH_SHORT).show();
@@ -239,7 +239,7 @@ public class MainActivity extends Activity {
 
         if (!canWrite) {
             toggleButton.setText("Grant Modify Settings");
-        } else if (enabled && mode == AutoBrightnessManager.Mode.MANUAL_OVERRIDE) {
+        } else if (enabled && mode == AutoBrightnessManager.Mode.USER_HOLD) {
             toggleButton.setText("Restart Protection");
         } else {
             toggleButton.setText(enabled ? "Turn Protection Off" : "Turn Protection On");
