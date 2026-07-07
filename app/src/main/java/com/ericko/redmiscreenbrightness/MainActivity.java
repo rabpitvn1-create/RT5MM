@@ -273,7 +273,7 @@ public class MainActivity extends Activity {
 
         if (diagnosticVisible) {
             setupText.setText("Diagnostic mode · long-press status or button to hide");
-            statusText.setText(AutoBrightnessManager.getDiagnosticText(this));
+            statusText.setText(AutoBrightnessManager.getDiagnosticText(this) + "\n\n" + ProtectionServiceHealth.getDiagnosticText(this));
         } else {
             setupText.setText(getSetupMessage(canWrite, sensorOk, notificationOk, batteryOk, setupState));
             statusText.setText(getMainStatusText(enabled, mode, sensorOk, percent));
@@ -286,6 +286,8 @@ public class MainActivity extends Activity {
             state = "Protection unavailable";
         } else if (enabled && mode == AutoBrightnessManager.Mode.USER_HOLD) {
             state = "Holding your brightness";
+        } else if (enabled && !ProtectionServiceHealth.isServiceHealthy(this)) {
+            state = "Protection limited";
         } else if (enabled) {
             state = "Protecting your screen";
         } else {
@@ -295,6 +297,7 @@ public class MainActivity extends Activity {
         return state
                 + "\nLight: " + getLightText()
                 + "\nBrightness: " + percent + "%"
+                + "\nService: " + ProtectionServiceHealth.getMainHealthText(this)
                 + "\nLong-press for diagnostics";
     }
 
