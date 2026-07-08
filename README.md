@@ -4,6 +4,13 @@ A personal one-button Android screen protection app for Redmi / HyperOS.
 
 The app is not meant to be a general brightness controller. Its job is to keep the screen inside conservative brightness levels, run quietly in the foreground when enabled, respect manual brightness changes, and restore protection after reboot when possible.
 
+## Latest APK update
+
+- Version: 1.0.20
+- Release channel: debug APK
+- Release tag: `screen-protection-latest`
+- APK filename: `Screen-Protection-debug.apk`
+
 ## Product direction
 
 Main screen philosophy:
