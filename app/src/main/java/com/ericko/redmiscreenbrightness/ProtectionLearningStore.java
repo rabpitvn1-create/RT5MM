@@ -12,7 +12,8 @@ public final class ProtectionLearningStore {
     private static final String KEY_ROLLBACK_COUNT_BAND_PREFIX = "protection_v2_rollback_count_";
 
     private static final int CURRENT_SCHEMA_VERSION = 2;
-    private static final int REQUIRED_CONFIRMATIONS = 2;
+    private static final int DEFAULT_REQUIRED_CONFIRMATIONS = 2;
+    private static final int NIGHT_12_REQUIRED_CONFIRMATIONS = 3;
     private static final int REQUIRED_ROLLBACKS = 2;
     private static final int MAX_CONFIDENCE = 3;
 
@@ -49,7 +50,7 @@ public final class ProtectionLearningStore {
             return;
         }
 
-        if (learnedPercent >= ProtectionPolicy.LEVEL_20 && learnedPercent != percent) {
+        if (learnedPercent >= ProtectionPolicy.LEVEL_12 && learnedPercent != percent) {
             int rollbackCount = prefs.getInt(rollbackKey, 0) + 1;
             editor.putInt(rollbackKey, rollbackCount);
             BrightnessLogManager.appendSnapshot(context, "LEARNING_V2_ROLLBACK_CANDIDATE_" + bandKey + "_OLD_" + learnedPercent + "_NEW_" + percent + "_COUNT_" + rollbackCount, lux);
@@ -63,17 +64,18 @@ public final class ProtectionLearningStore {
 
         int pendingPercent = prefs.getInt(pendingKey, -1);
         int count = pendingPercent == percent ? prefs.getInt(countKey, 0) + 1 : 1;
+        int requiredConfirmations = getRequiredConfirmations(percent);
         editor.putInt(pendingKey, percent)
                 .putInt(countKey, count);
 
-        if (count >= REQUIRED_CONFIRMATIONS) {
+        if (count >= requiredConfirmations) {
             int confidence = Math.min(MAX_CONFIDENCE, Math.max(2, count));
             editor.putInt(learnedKey, percent)
                     .putInt(confidenceKey, confidence)
                     .remove(rollbackKey);
             BrightnessLogManager.appendSnapshot(context, "LEARNING_V2_LEARNED_" + bandKey + "_" + percent + "_PERCENT_CONF_" + confidence, lux);
         } else {
-            BrightnessLogManager.appendSnapshot(context, "LEARNING_V2_PENDING_" + bandKey + "_" + percent + "_PERCENT_COUNT_" + count + "_LABEL_" + safeLog(bandLabel), lux);
+            BrightnessLogManager.appendSnapshot(context, "LEARNING_V2_PENDING_" + bandKey + "_" + percent + "_PERCENT_COUNT_" + count + "_REQ_" + requiredConfirmations + "_LABEL_" + safeLog(bandLabel), lux);
         }
         editor.apply();
     }
@@ -119,6 +121,7 @@ public final class ProtectionLearningStore {
         String pendingKey = KEY_PENDING_BAND_PERCENT_PREFIX + bandKey;
         String countKey = KEY_CONFIRM_COUNT_BAND_PREFIX + bandKey;
         String rollbackKey = KEY_ROLLBACK_COUNT_BAND_PREFIX + bandKey;
+        int pendingPercent = prefs.getInt(pendingKey, -1);
 
         return "Learning v2"
                 + "\nSchema: " + prefs.getInt(KEY_LEARNING_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION)
@@ -127,9 +130,14 @@ public final class ProtectionLearningStore {
                 + "\nMax learned: " + policy.getBandMaxLearnedPercent(lux) + "%"
                 + "\nLearned: " + (learnedPercent > 0 ? learnedPercent + "%" : "none")
                 + "\nConfidence: " + confidence + "/" + MAX_CONFIDENCE
-                + "\nPending: " + prefs.getInt(pendingKey, -1) + "%"
+                + "\nPending: " + pendingPercent + "%"
                 + "\nConfirm count: " + prefs.getInt(countKey, 0)
+                + "\nRequired count: " + (pendingPercent > 0 ? getRequiredConfirmations(pendingPercent) : DEFAULT_REQUIRED_CONFIRMATIONS)
                 + "\nRollback count: " + prefs.getInt(rollbackKey, 0);
+    }
+
+    private static int getRequiredConfirmations(int percent) {
+        return percent == ProtectionPolicy.LEVEL_12 ? NIGHT_12_REQUIRED_CONFIRMATIONS : DEFAULT_REQUIRED_CONFIRMATIONS;
     }
 
     private static void ensureSchema(SharedPreferences prefs) {
