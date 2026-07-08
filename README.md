@@ -22,8 +22,11 @@ Internal behavior:
 
 ## Current protection buckets
 
-These are the raw values currently used by the app. The curve now uses 17 protection buckets for smoother movement:
+These are the raw values currently used by the app. The curve now uses 20 protection buckets, including a guarded night-protection range below 20%:
 
+- 12% = raw 7
+- 15% = raw 8
+- 18% = raw 10
 - 20% = raw 11
 - 23% = raw 13
 - 25% = raw 14
@@ -46,25 +49,35 @@ The percentages are app-level protection buckets, not a promise that Android or 
 
 ## Lux curve
 
-The protection policy uses 17 lux bands so brightness changes one small bucket at a time instead of jumping across large ranges:
+The protection policy uses 20 lux bands. It is intentionally dense at night and indoors, then gradually wider in bright-room and outdoor ranges:
 
-- up to 8 lx -> 20%
-- up to 13 lx -> 23%
-- up to 20 lx -> 25%
-- up to 35 lx -> 28%
-- up to 60 lx -> 30%
-- up to 85 lx -> 33%
-- up to 120 lx -> 35%
-- up to 175 lx -> 38%
-- up to 250 lx -> 40%
-- up to 355 lx -> 43%
-- up to 500 lx -> 45%
-- up to 710 lx -> 48%
-- up to 1000 lx -> 50%
-- up to 1580 lx -> 53%
-- up to 2500 lx -> 55%
-- up to 5000 lx -> 58%
-- above 5000 lx -> 60%
+- up to 1 lx -> 12%
+- up to 3 lx -> 15%
+- up to 6 lx -> 18%
+- up to 10 lx -> 20%
+- up to 16 lx -> 23%
+- up to 25 lx -> 25%
+- up to 40 lx -> 28%
+- up to 65 lx -> 30%
+- up to 100 lx -> 33%
+- up to 150 lx -> 35%
+- up to 230 lx -> 38%
+- up to 350 lx -> 40%
+- up to 520 lx -> 43%
+- up to 800 lx -> 45%
+- up to 1200 lx -> 48%
+- up to 1800 lx -> 50%
+- up to 2600 lx -> 53%
+- up to 3800 lx -> 55%
+- up to 5500 lx -> 58%
+- above 5500 lx -> 60%
+
+Movement rules:
+
+- Dimming into 12%, 15%, or 18% requires longer stability.
+- Leaving night-protection brightness is faster than entering it.
+- Strong lux increases can move more than one bucket.
+- Write budget is dynamic: slower for sub-20 dimming, faster for upward movement.
 
 ## Quick Settings Tile
 
