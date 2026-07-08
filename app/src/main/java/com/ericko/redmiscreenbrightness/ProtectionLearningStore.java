@@ -11,7 +11,7 @@ public final class ProtectionLearningStore {
     private static final String KEY_CONFIRM_COUNT_BAND_PREFIX = "protection_v2_confirm_count_";
     private static final String KEY_ROLLBACK_COUNT_BAND_PREFIX = "protection_v2_rollback_count_";
 
-    private static final int CURRENT_SCHEMA_VERSION = 2;
+    private static final int CURRENT_SCHEMA_VERSION = 3;
     private static final int DEFAULT_REQUIRED_CONFIRMATIONS = 2;
     private static final int NIGHT_12_REQUIRED_CONFIRMATIONS = 3;
     private static final int REQUIRED_ROLLBACKS = 2;
