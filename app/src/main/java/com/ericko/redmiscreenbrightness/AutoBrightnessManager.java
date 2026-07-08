@@ -40,6 +40,11 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final long APP_WRITE_GRACE_MS = 12000L;
     private static final long USER_INTENT_STABLE_MS = 3000L;
     private static final long WRITE_BUDGET_MS = 6000L;
+    private static final long WRITE_BUDGET_UP_SMALL_MS = 3000L;
+    private static final long WRITE_BUDGET_UP_STRONG_MS = 1000L;
+    private static final long WRITE_BUDGET_NIGHT_18_MS = 9000L;
+    private static final long WRITE_BUDGET_NIGHT_15_MS = 10000L;
+    private static final long WRITE_BUDGET_NIGHT_12_MS = 12000L;
     public static final long USER_HOLD_MS = 45L * 60L * 1000L;
     private static final float USER_HOLD_RELEASE_PCT = 120f;
     private static final float USER_HOLD_RELEASE_MIN_LUX = 60f;
@@ -193,6 +198,8 @@ public class AutoBrightnessManager implements SensorEventListener {
     private ProtectionDecisionEngine.Decision makeDecision(float lux, long now, boolean userHoldActive, int learnedPercent, boolean forceApply) {
         int currentPercent = BrightnessLevels.getCurrentPercent(appContext);
         int currentRaw = BrightnessLevels.getSystemRaw(appContext, BrightnessLevels.getRawForPercent(currentPercent));
+        int targetPercent = protectionPolicy.getTargetPercent(lux, currentPercent);
+        long dynamicWriteBudgetMs = getDynamicWriteBudgetMs(lux, currentPercent, targetPercent);
         return decisionEngine.decide(new ProtectionDecisionEngine.Request(
                 lux,
                 currentPercent,
@@ -201,7 +208,7 @@ public class AutoBrightnessManager implements SensorEventListener {
                 candidateSince,
                 now,
                 getLastAutoAt(appContext),
-                WRITE_BUDGET_MS,
+                dynamicWriteBudgetMs,
                 forceApply,
                 userHoldActive,
                 true,
@@ -511,11 +518,32 @@ public class AutoBrightnessManager implements SensorEventListener {
         if (lastWriteAt <= 0L) {
             return 0L;
         }
+        float lux = getLastLux(context);
+        int currentPercent = BrightnessLevels.getCurrentPercent(context);
+        int targetPercent = new ProtectionPolicy().getTargetPercent(lux, currentPercent);
+        long budgetMs = getDynamicWriteBudgetMs(lux, currentPercent, targetPercent);
         long elapsed = Math.max(0L, now - lastWriteAt);
-        if (elapsed >= WRITE_BUDGET_MS) {
+        if (elapsed >= budgetMs) {
             return 0L;
         }
-        return WRITE_BUDGET_MS - elapsed;
+        return budgetMs - elapsed;
+    }
+
+    private static long getDynamicWriteBudgetMs(float lux, int currentPercent, int targetPercent) {
+        if (targetPercent > currentPercent) {
+            int delta = targetPercent - currentPercent;
+            if (lux >= 1200f || delta >= 8) {
+                return WRITE_BUDGET_UP_STRONG_MS;
+            }
+            return WRITE_BUDGET_UP_SMALL_MS;
+        }
+        if (targetPercent < currentPercent) {
+            if (targetPercent == ProtectionPolicy.LEVEL_12) return WRITE_BUDGET_NIGHT_12_MS;
+            if (targetPercent == ProtectionPolicy.LEVEL_15) return WRITE_BUDGET_NIGHT_15_MS;
+            if (targetPercent == ProtectionPolicy.LEVEL_18) return WRITE_BUDGET_NIGHT_18_MS;
+            return WRITE_BUDGET_MS;
+        }
+        return 0L;
     }
 
     private static boolean isUserHoldActive(Context context, long now) {
