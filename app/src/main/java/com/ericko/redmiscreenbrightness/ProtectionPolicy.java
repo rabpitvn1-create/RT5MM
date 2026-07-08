@@ -7,6 +7,9 @@ package com.ericko.redmiscreenbrightness;
  * logic can evolve independently from sensors, services, permissions, and UI.
  */
 public final class ProtectionPolicy {
+    public static final int LEVEL_12 = 12;
+    public static final int LEVEL_15 = 15;
+    public static final int LEVEL_18 = 18;
     public static final int LEVEL_20 = 20;
     public static final int LEVEL_23 = 23;
     public static final int LEVEL_25 = 25;
@@ -26,48 +29,52 @@ public final class ProtectionPolicy {
     public static final int LEVEL_60 = 60;
 
     private static final int[] LEVELS = new int[] {
-            LEVEL_20, LEVEL_23, LEVEL_25, LEVEL_28, LEVEL_30,
-            LEVEL_33, LEVEL_35, LEVEL_38, LEVEL_40, LEVEL_43,
-            LEVEL_45, LEVEL_48, LEVEL_50, LEVEL_53, LEVEL_55,
-            LEVEL_58, LEVEL_60
+            LEVEL_12, LEVEL_15, LEVEL_18, LEVEL_20, LEVEL_23,
+            LEVEL_25, LEVEL_28, LEVEL_30, LEVEL_33, LEVEL_35,
+            LEVEL_38, LEVEL_40, LEVEL_43, LEVEL_45, LEVEL_48,
+            LEVEL_50, LEVEL_53, LEVEL_55, LEVEL_58, LEVEL_60
     };
 
     private static final float[] LUX_CEILINGS = new float[] {
-            8f, 13f, 20f, 35f, 60f,
-            85f, 120f, 175f, 250f, 355f,
-            500f, 710f, 1000f, 1580f, 2500f,
-            5000f, Float.MAX_VALUE
+            1f, 3f, 6f, 10f, 16f,
+            25f, 40f, 65f, 100f, 150f,
+            230f, 350f, 520f, 800f, 1200f,
+            1800f, 2600f, 3800f, 5500f, Float.MAX_VALUE
     };
 
     private static final String[] BAND_KEYS = new String[] {
-            "0_8", "8_13", "13_20", "20_35", "35_60",
-            "60_85", "85_120", "120_175", "175_250", "250_355",
-            "355_500", "500_710", "710_1000", "1000_1580", "1580_2500",
-            "2500_5000", "5000_plus"
+            "0_1", "1_3", "3_6", "6_10", "10_16",
+            "16_25", "25_40", "40_65", "65_100", "100_150",
+            "150_230", "230_350", "350_520", "520_800", "800_1200",
+            "1200_1800", "1800_2600", "2600_3800", "3800_5500", "5500_plus"
     };
 
     private static final String[] BAND_LABELS = new String[] {
-            "0-8 lx", "8-13 lx", "13-20 lx", "20-35 lx", "35-60 lx",
-            "60-85 lx", "85-120 lx", "120-175 lx", "175-250 lx", "250-355 lx",
-            "355-500 lx", "500-710 lx", "710-1000 lx", "1000-1580 lx", "1580-2500 lx",
-            "2500-5000 lx", "5000+ lx"
+            "0-1 lx", "1-3 lx", "3-6 lx", "6-10 lx", "10-16 lx",
+            "16-25 lx", "25-40 lx", "40-65 lx", "65-100 lx", "100-150 lx",
+            "150-230 lx", "230-350 lx", "350-520 lx", "520-800 lx", "800-1200 lx",
+            "1200-1800 lx", "1800-2600 lx", "2600-3800 lx", "3800-5500 lx", "5500+ lx"
     };
 
     private static final int[] BAND_MAX_LEARNED = new int[] {
-            LEVEL_23, LEVEL_25, LEVEL_28, LEVEL_30, LEVEL_33,
-            LEVEL_35, LEVEL_38, LEVEL_40, LEVEL_43, LEVEL_45,
-            LEVEL_48, LEVEL_50, LEVEL_53, LEVEL_55, LEVEL_58,
-            LEVEL_60, LEVEL_60
+            LEVEL_12, LEVEL_15, LEVEL_18, LEVEL_20, LEVEL_23,
+            LEVEL_25, LEVEL_28, LEVEL_30, LEVEL_33, LEVEL_35,
+            LEVEL_38, LEVEL_40, LEVEL_43, LEVEL_45, LEVEL_48,
+            LEVEL_50, LEVEL_53, LEVEL_55, LEVEL_58, LEVEL_60
     };
 
-    private static final float VERY_DARK_MAX_LUX = 12f;
-    private static final float DIM_ROOM_MAX_LUX = 90f;
+    private static final float VERY_DARK_MAX_LUX = 6f;
+    private static final float DIM_ROOM_MAX_LUX = 65f;
     private static final float ROOM_MAX_LUX = 350f;
-    private static final float BRIGHT_ROOM_MAX_LUX = 2100f;
+    private static final float BRIGHT_ROOM_MAX_LUX = 1800f;
 
-    private static final long STABLE_UP_MS = 1800L;
+    private static final long STABLE_UP_MS = 1600L;
+    private static final long STABLE_UP_STRONG_MS = 900L;
     private static final long STABLE_DOWN_MS = 5200L;
-    private static final long STABLE_SAME_MS = 1600L;
+    private static final long STABLE_SAME_MS = 1400L;
+    private static final long STABLE_NIGHT_18_MS = 7000L;
+    private static final long STABLE_NIGHT_15_MS = 9500L;
+    private static final long STABLE_NIGHT_12_MS = 14000L;
 
     private static final float SUDDEN_DARK_MAX_LUX = 3f;
     private static final float SUDDEN_DARK_DROP_RATIO = 0.18f;
@@ -110,7 +117,7 @@ public final class ProtectionPolicy {
         int current = normalizePercent(currentPercent);
         int desired = getDesiredPercent(lux);
         if (desired > current) {
-            return getNextPercent(current);
+            return getUpwardTarget(current, desired);
         }
         if (desired < current) {
             return getPreviousPercent(current);
@@ -122,9 +129,12 @@ public final class ProtectionPolicy {
         int current = normalizePercent(currentPercent);
         int target = normalizePercent(targetPercent);
         if (target > current) {
-            return STABLE_UP_MS;
+            return getIndex(target) - getIndex(current) >= 2 ? STABLE_UP_STRONG_MS : STABLE_UP_MS;
         }
         if (target < current) {
+            if (target == LEVEL_12) return STABLE_NIGHT_12_MS;
+            if (target == LEVEL_15) return STABLE_NIGHT_15_MS;
+            if (target == LEVEL_18) return STABLE_NIGHT_18_MS;
             return STABLE_DOWN_MS;
         }
         return STABLE_SAME_MS;
@@ -161,7 +171,7 @@ public final class ProtectionPolicy {
 
     public boolean isSafeLearnedPercentForBand(float lux, int percent) {
         int max = getBandMaxLearnedPercent(lux);
-        return max >= 0 && percent >= LEVEL_20 && percent <= max;
+        return max >= 0 && percent >= LEVEL_12 && percent <= max;
     }
 
     private int getDesiredPercent(float lux) {
@@ -181,6 +191,21 @@ public final class ProtectionPolicy {
         return LUX_CEILINGS.length - 1;
     }
 
+    private int getUpwardTarget(int current, int desired) {
+        if (current == LEVEL_12 && desired >= LEVEL_20) return LEVEL_20;
+        if (current == LEVEL_15 && desired >= LEVEL_23) return LEVEL_23;
+        if (current == LEVEL_18 && desired >= LEVEL_25) return LEVEL_25;
+
+        int currentIndex = getIndex(current);
+        int desiredIndex = getIndex(desired);
+        if (currentIndex < 0 || desiredIndex <= currentIndex) {
+            return getNextPercent(current);
+        }
+        int distance = desiredIndex - currentIndex;
+        int steps = distance >= 6 ? 3 : (distance >= 3 ? 2 : 1);
+        return LEVELS[Math.min(desiredIndex, currentIndex + steps)];
+    }
+
     private int getNextPercent(int percent) {
         int current = normalizePercent(percent);
         for (int i = 0; i < LEVELS.length - 1; i++) {
@@ -198,7 +223,7 @@ public final class ProtectionPolicy {
                 return LEVELS[i - 1];
             }
         }
-        return LEVEL_20;
+        return LEVEL_12;
     }
 
     private int normalizePercent(int percent) {
@@ -212,5 +237,15 @@ public final class ProtectionPolicy {
             }
         }
         return best;
+    }
+
+    private int getIndex(int percent) {
+        int normalized = normalizePercent(percent);
+        for (int i = 0; i < LEVELS.length; i++) {
+            if (LEVELS[i] == normalized) {
+                return i;
+            }
+        }
+        return -1;
     }
 }
