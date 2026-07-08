@@ -172,7 +172,7 @@ public final class ProtectionDecisionEngine {
         }
 
         int baseTarget = normalizePercent(protectionPolicy.getTargetPercent(request.lux, currentPercent));
-        boolean useLearned = request.learnedPercent >= ProtectionPolicy.LEVEL_20
+        boolean useLearned = request.learnedPercent >= ProtectionPolicy.LEVEL_12
                 && request.learnedPercent <= ProtectionPolicy.LEVEL_60;
         int targetPercent = normalizePercent(useLearned ? request.learnedPercent : baseTarget);
         int targetRaw = BrightnessLevels.getRawForPercent(targetPercent);
@@ -310,8 +310,8 @@ public final class ProtectionDecisionEngine {
     }
 
     private int normalizePercent(int percent) {
-        if (percent < ProtectionPolicy.LEVEL_20) {
-            return ProtectionPolicy.LEVEL_20;
+        if (percent < ProtectionPolicy.LEVEL_12) {
+            return ProtectionPolicy.LEVEL_12;
         }
         if (percent > ProtectionPolicy.LEVEL_60) {
             return ProtectionPolicy.LEVEL_60;
