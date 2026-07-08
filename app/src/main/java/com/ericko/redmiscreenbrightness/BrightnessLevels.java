@@ -15,12 +15,12 @@ public final class BrightnessLevels {
      * reduce eye strain, and save battery.
      */
     private static final int[] PERCENTS = new int[] {
-            20, 23, 25, 28, 30, 33, 35, 38, 40,
-            43, 45, 48, 50, 53, 55, 58, 60
+            12, 15, 18, 20, 23, 25, 28, 30, 33, 35,
+            38, 40, 43, 45, 48, 50, 53, 55, 58, 60
     };
     private static final int[] RAW_VALUES = new int[] {
-            11, 13, 14, 16, 17, 20, 22, 24, 26,
-            29, 32, 35, 38, 41, 44, 47, 49
+            7, 8, 10, 11, 13, 14, 16, 17, 20, 22,
+            24, 26, 29, 32, 35, 38, 41, 44, 47, 49
     };
 
     private static final int MIN_RAW = 1;
