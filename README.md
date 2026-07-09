@@ -11,6 +11,7 @@ The app is not meant to be a general brightness controller. Its job is to keep t
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
 - Release note: publishes the rolling-window brightness decision gate build.
+- Publish trigger: release APK build requested after decision-gate update.
 
 ## Product direction
 
