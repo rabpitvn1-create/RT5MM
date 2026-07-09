@@ -314,18 +314,18 @@ public class AutoBrightnessManager implements SensorEventListener {
         int raw = BrightnessLevels.getRawForPercent(percent);
         int currentRaw = BrightnessLevels.getSystemRaw(appContext, raw);
         if (Math.abs(currentRaw - raw) <= RAW_CHANGE_TOLERANCE) {
-            saveLastAutoRaw(appContext, raw);
             beginAppWriteGrace(appContext);
+            saveLastAutoRaw(appContext, raw);
             saveMode(appContext, Mode.PROTECTING);
             ProtectionBatteryStats.recordBrightnessWriteSkip(appContext);
             BrightnessLogManager.logSnapshotIfChanged(appContext, "PROTECTION_AT_" + percent + "_PERCENT", getBestLux());
             return;
         }
 
+        beginAppWriteGrace(appContext);
         boolean ok = BrightnessLevels.applyBrightness(appContext, percent, raw);
         if (ok) {
             saveLastAutoRaw(appContext, raw);
-            beginAppWriteGrace(appContext);
             saveMode(appContext, Mode.PROTECTING);
             ProtectionBatteryStats.recordBrightnessWrite(appContext);
             BrightnessLogManager.appendSnapshot(appContext, "PROTECTION_APPLIED_" + percent + "_PERCENT_RAW_" + raw, getBestLux());
