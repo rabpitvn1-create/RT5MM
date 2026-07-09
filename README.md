@@ -6,7 +6,7 @@ The app is not meant to be a general brightness controller. Its job is to keep t
 
 ## Latest APK update
 
-- Version: 1.0.23
+- Version: 1.0.24
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
@@ -46,6 +46,7 @@ Battery v2 strategy:
 - Last lux persistence uses RAM cache first and avoids reading SharedPreferences on the sensor hot path.
 - Battery counters are RAM-first and flushed on service stop instead of writing SharedPreferences on every sensor sample.
 - Manual brightness changes are detected by a `SCREEN_BRIGHTNESS` ContentObserver instead of relying on the sensor loop.
+- App-write grace is started before app-driven brightness writes so the observer does not mistake the app's own write for a user override.
 - Service health understands `SCREEN_OFF_SLEEP`, so sleep mode is not falsely reported as stale/limited.
 - Normal sensor-sample logs are suppressed unless a decision is important; diagnostic mode shows battery counters.
 
