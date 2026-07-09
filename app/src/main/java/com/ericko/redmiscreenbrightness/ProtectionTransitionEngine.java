@@ -9,8 +9,8 @@ public final class ProtectionTransitionEngine {
     private static final int FAST_STEP_RAW = 3;
     private static final long UP_STEP_MS = 650L;
     private static final long STRONG_UP_STEP_MS = 380L;
-    private static final long DOWN_STEP_MS = 1300L;
-    private static final long NIGHT_DOWN_STEP_MS = 1900L;
+    private static final long DOWN_STEP_MS = 900L;
+    private static final long NIGHT_DOWN_STEP_MS = 1100L;
 
     private final Context appContext;
     private final Handler handler;
@@ -39,6 +39,7 @@ public final class ProtectionTransitionEngine {
     public void transitionToRaw(int requestedTargetRaw, String reason) {
         int safeTarget = ProtectionCurveEngine.clampRaw(requestedTargetRaw);
         int currentRaw = BrightnessLevels.getSystemRaw(appContext, safeTarget);
+        AutoBrightnessManager.markAppBrightnessWriteGrace(appContext);
         if (currentRaw == safeTarget) {
             targetRaw = safeTarget;
             running = false;
@@ -73,6 +74,7 @@ public final class ProtectionTransitionEngine {
             int nextRaw = currentRaw + direction * Math.min(stepSize, distance);
             nextRaw = ProtectionCurveEngine.clampRaw(nextRaw);
 
+            AutoBrightnessManager.markAppBrightnessWriteGrace(appContext);
             boolean ok = BrightnessLevels.applyProtectedRaw(appContext, nextRaw);
             if (ok) {
                 ProtectionBatteryStats.recordBrightnessWrite(appContext);
