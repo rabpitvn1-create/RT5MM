@@ -6,7 +6,7 @@ The app is not meant to be a general brightness controller. Its job is to keep t
 
 ## Latest APK update
 
-- Version: 1.0.26
+- Version: 1.0.27
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
@@ -38,17 +38,18 @@ Screen Protection now takes exclusive control more cleanly:
 - While protection is running, screen wake and service refresh paths force `MANUAL` again in case another feature re-enabled auto brightness.
 - When protection stops, the app restores the captured previous mode. If the system was using auto brightness before protection started, it is restored to auto; if it was already manual, it stays manual.
 
-## Brightness Brain v3 foundation
+## Brightness Brain v3 active path
 
-This version starts the Personal Mode redesign inspired by Auto-Shine's best ideas, without copying its public-app tradeoffs:
+This version connects the Brightness Brain foundation into the active manager path:
 
-- `ProtectionCurveEngine` adds a protected interpolated lux-to-raw curve.
-- The curve keeps the Redmi protection clamp: raw 7 to raw 49.
-- `BrightnessLevels.applyProtectedRaw()` allows the app to write protected raw values directly instead of only writing bucket percentages.
-- `ProtectionTransitionEngine` adds a guarded transition queue for smoother raw changes.
-- Transition writes refresh app-write grace before every step so the brightness observer does not mistake the app's own transition for a manual user override.
+- `ProtectionCurveEngine` now supplies the actual active lux-to-raw target.
+- `AutoBrightnessManager` no longer jumps directly to bucket brightness during normal protection decisions.
+- The manager writes a protected raw target and lets `ProtectionTransitionEngine` move toward it smoothly.
+- Transition is cancelled on screen-off sleep, service stop, force recovery, and confirmed user brightness hold.
+- The raw target is saved as the last app-driven raw value so the brightness observer can still distinguish app writes from real user changes.
+- User hold is shortened for personal-mode behavior: normal hold is about 15 minutes; night hold is about 8 minutes.
 
-This is the foundation layer. The next layers are manager integration, event-driven short sampling, context detection, game profile, game-exit recovery, and context-based learning.
+This is still not the full context engine. The next layer is Usage/Accessibility-based context detection for GAME / VIDEO / READING / NORMAL and game-exit recovery.
 
 ## Battery-aware protection
 
