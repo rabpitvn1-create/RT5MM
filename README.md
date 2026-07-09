@@ -6,11 +6,11 @@ The app is not meant to be a general brightness controller. Its job is to keep t
 
 ## Latest APK update
 
-- Version: 1.0.29
+- Version: 1.0.30
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
-- Release note: build recovered after removing duplicate launcher icon resources.
+- Release note: adds stable same-room environment detection so the light sensor can pause when lux only drifts slightly inside the same environment.
 
 ## Product direction
 
@@ -43,29 +43,42 @@ Screen Protection now takes exclusive control more cleanly:
 
 This version connects the Brightness Brain foundation into the active manager path:
 
-- `ProtectionCurveEngine` now supplies the actual active lux-to-raw target.
+- `ProtectionCurveEngine` supplies the active lux-to-raw target.
 - `AutoBrightnessManager` no longer jumps directly to bucket brightness during normal protection decisions.
 - The manager writes a protected raw target and lets `ProtectionTransitionEngine` move toward it smoothly.
 - Transition is cancelled on screen-off sleep, service stop, force recovery, and confirmed user brightness hold.
-- The raw target is saved as the last app-driven raw value so the brightness observer can still distinguish app writes from real user changes.
+- The raw target is saved as the last app-driven raw value so the brightness observer can distinguish app writes from real user changes.
 - User hold is shortened for personal-mode behavior: normal hold is about 15 minutes; night hold is about 8 minutes.
 
-This is still not the full context engine. The next layer is Usage/Accessibility-based context detection for GAME / VIDEO / READING / NORMAL and game-exit recovery.
+## Stable environment pause
+
+When the user moves around inside the same room, ambient lux can drift slightly even though the environment has not meaningfully changed. The app now detects that case and backs off the light sensor:
+
+- Same lux band.
+- Lux drift stays small: about 8 lx absolute or about 10% relative.
+- Stability lasts about 60 seconds.
+- Not in user hold.
+- Not currently transitioning brightness.
+
+When those conditions are true, the app pauses the light sensor for about 2 minutes. Protection stays on, brightness is not handed back to the system, and the sensor resumes on screen wake, manual recovery, or when the pause window expires.
+
+Diagnostic mode now shows whether the sensor is active or paused because the app believes the user is still in the same environment.
 
 ## Battery-aware protection
 
-The app now uses a battery-aware protection layer:
+The app uses a battery-aware protection layer:
 
 - `ACTIVE_SCREEN_ON`: sensor is active and protection evaluates brightness.
 - `SCREEN_OFF_SLEEP`: screen is off, the light sensor is unregistered, interval evaluation is suspended, and the notification avoids live raw-brightness reads.
 - `RECOVERY_WAKE`: screen just woke, service restarted, or protection was refreshed; the app evaluates quickly once and returns to active mode.
 - `USER_HOLD_LOW_POWER`: the user has manually changed brightness, so protection backs off and evaluates less aggressively.
 
-Battery v2 strategy:
+Battery strategy:
 
 - Screen off -> unregister light sensor and stop protection interval ticks.
 - Screen on -> register light sensor and recovery evaluate.
 - Same lux band -> throttle evaluation instead of running the full decision pipeline every sensor sample.
+- Stable same-room environment -> pause the light sensor briefly and re-sample later.
 - Strong lux rise -> evaluate immediately so brightness can recover quickly.
 - Last lux persistence uses RAM cache first and avoids reading SharedPreferences on the sensor hot path.
 - Battery counters are RAM-first and flushed on service stop instead of writing SharedPreferences on every sensor sample.
@@ -76,7 +89,7 @@ Battery v2 strategy:
 
 ## Current protection buckets
 
-These are the raw values currently used by the app. The curve now uses 20 protection buckets, including a guarded night-protection range below 20% and a smoother mid-high raw progression:
+These are the raw values currently used by the app. The curve uses 20 protection buckets, including a guarded night-protection range below 20% and a smoother mid-high raw progression:
 
 - 12% = raw 7
 - 15% = raw 8
