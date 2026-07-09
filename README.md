@@ -6,7 +6,7 @@ The app is not meant to be a general brightness controller. Its job is to keep t
 
 ## Latest APK update
 
-- Version: 1.0.20
+- Version: 1.0.21
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
@@ -29,7 +29,7 @@ Internal behavior:
 
 ## Current protection buckets
 
-These are the raw values currently used by the app. The curve now uses 20 protection buckets, including a guarded night-protection range below 20%:
+These are the raw values currently used by the app. The curve now uses 20 protection buckets, including a guarded night-protection range below 20% and a smoother mid-high raw progression:
 
 - 12% = raw 7
 - 15% = raw 8
@@ -39,17 +39,17 @@ These are the raw values currently used by the app. The curve now uses 20 protec
 - 25% = raw 14
 - 28% = raw 16
 - 30% = raw 17
-- 33% = raw 20
-- 35% = raw 22
-- 38% = raw 24
-- 40% = raw 26
-- 43% = raw 29
-- 45% = raw 32
-- 48% = raw 35
-- 50% = raw 38
-- 53% = raw 41
-- 55% = raw 44
-- 58% = raw 47
+- 33% = raw 19
+- 35% = raw 21
+- 38% = raw 23
+- 40% = raw 25
+- 43% = raw 28
+- 45% = raw 31
+- 48% = raw 34
+- 50% = raw 37
+- 53% = raw 40
+- 55% = raw 43
+- 58% = raw 46
 - 60% = raw 49
 
 The percentages are app-level protection buckets, not a promise that Android or HyperOS will display the same visual percentage on every device.
