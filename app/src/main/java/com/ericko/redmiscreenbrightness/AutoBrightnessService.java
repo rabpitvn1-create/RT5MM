@@ -10,11 +10,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
+import android.database.ContentObserver;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.provider.Settings;
 
 import java.util.Locale;
 
@@ -27,12 +29,15 @@ public class AutoBrightnessService extends Service {
     private static final int NOTIFICATION_ID = 3001;
     private static final long NOTIFICATION_REFRESH_MS = 60000L;
     private static final long PROTECTION_UPDATE_MS = 15000L;
+    private static final long MANUAL_BRIGHTNESS_CONFIRM_MS = 3200L;
 
     private AutoBrightnessManager manager;
     private Handler handler;
     private boolean foregroundStarted = false;
     private boolean screenReceiverRegistered = false;
+    private boolean brightnessObserverRegistered = false;
     private String lastNotificationSignature = "";
+    private ContentObserver brightnessObserver;
 
     private final BroadcastReceiver screenEventReceiver = new BroadcastReceiver() {
         @Override
@@ -97,6 +102,7 @@ public class AutoBrightnessService extends Service {
         manager = new AutoBrightnessManager(this);
         createNotificationChannel();
         registerScreenReceiver();
+        registerBrightnessObserver();
     }
 
     @Override
@@ -123,6 +129,7 @@ public class AutoBrightnessService extends Service {
         if (manager == null) {
             manager = new AutoBrightnessManager(this);
         }
+        registerBrightnessObserver();
 
         if (isDeviceInteractive()) {
             manager.start();
@@ -154,11 +161,13 @@ public class AutoBrightnessService extends Service {
             handler.removeCallbacks(notificationRefreshRunnable);
             handler.removeCallbacks(protectionUpdateRunnable);
         }
+        unregisterBrightnessObserver();
         unregisterScreenReceiver();
         if (manager != null) {
             manager.stop();
             manager = null;
         }
+        ProtectionBatteryStats.flush(this);
         stopForegroundCompat();
         ProtectionServiceHealth.markServiceStopped(this, "SERVICE_DESTROYED");
         super.onDestroy();
@@ -215,23 +224,35 @@ public class AutoBrightnessService extends Service {
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, openIntent, flags);
 
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
-        int percent = BrightnessLevels.getCurrentPercent(this);
-        int raw = BrightnessLevels.getSystemRaw(this, BrightnessLevels.getRawForPercent(percent));
+        ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(this);
         float lux = AutoBrightnessManager.getLastLux(this);
         long holdMs = AutoBrightnessManager.getUserHoldRemainingMs(this);
         int holdRaw = AutoBrightnessManager.getUserHoldRaw(this);
-        ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(this);
 
         String luxText = formatLux(lux);
         String modeText = AutoBrightnessManager.getDisplayMode(mode);
         String holdText = holdMs > 0L ? "Holding: " + (holdMs / 1000L) + "s" + (holdRaw >= 0 ? " / raw " + holdRaw : "") : "Holding: inactive";
-        String contentText = "Lux: " + luxText + " · Raw: " + raw + " · " + powerState.name();
-        String bigText = "Screen Protection đang bật"
-                + "\nLux hiện tại: " + luxText
-                + "\nBrightness: " + percent + "% / raw " + raw
-                + "\nMode: " + modeText
-                + "\nPower: " + powerState.name()
-                + "\n" + holdText;
+
+        String contentText;
+        String bigText;
+        if (powerState == ProtectionPowerState.SCREEN_OFF_SLEEP) {
+            contentText = "Sleeping · sensor paused";
+            bigText = "Screen Protection đang nghỉ tiết kiệm pin"
+                    + "\nSensor ánh sáng: tạm dừng đến khi màn hình bật"
+                    + "\nLux gần nhất: " + luxText
+                    + "\nMode: " + modeText
+                    + "\n" + holdText;
+        } else {
+            int percent = BrightnessLevels.getCurrentPercent(this);
+            int raw = BrightnessLevels.getSystemRaw(this, BrightnessLevels.getRawForPercent(percent));
+            contentText = "Lux: " + luxText + " · Raw: " + raw + " · " + powerState.name();
+            bigText = "Screen Protection đang bật"
+                    + "\nLux hiện tại: " + luxText
+                    + "\nBrightness: " + percent + "% / raw " + raw
+                    + "\nMode: " + modeText
+                    + "\nPower: " + powerState.name()
+                    + "\n" + holdText;
+        }
 
         Notification.Builder builder;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -256,11 +277,14 @@ public class AutoBrightnessService extends Service {
 
     private String buildNotificationSignature() {
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
-        int percent = BrightnessLevels.getCurrentPercent(this);
         long holdBucket = AutoBrightnessManager.getUserHoldRemainingMs(this) / 60L;
         float lux = AutoBrightnessManager.getLastLux(this);
-        int raw = BrightnessLevels.getSystemRaw(this, -1);
         ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(this);
+        if (powerState == ProtectionPowerState.SCREEN_OFF_SLEEP) {
+            return mode.name() + "|" + powerState.name() + "|sleep|" + Math.round(lux) + "|" + holdBucket;
+        }
+        int percent = BrightnessLevels.getCurrentPercent(this);
+        int raw = BrightnessLevels.getSystemRaw(this, -1);
         return mode.name() + "|" + powerState.name() + "|" + percent + "|" + raw + "|" + Math.round(lux) + "|" + holdBucket;
     }
 
@@ -283,17 +307,82 @@ public class AutoBrightnessService extends Service {
         handler.postDelayed(protectionUpdateRunnable, PROTECTION_UPDATE_MS);
     }
 
+    private void registerBrightnessObserver() {
+        if (brightnessObserverRegistered || handler == null) {
+            return;
+        }
+        brightnessObserver = new ContentObserver(handler) {
+            @Override
+            public void onChange(boolean selfChange) {
+                super.onChange(selfChange);
+                handleBrightnessObserverChange();
+            }
+        };
+        try {
+            getContentResolver().registerContentObserver(
+                    Settings.System.getUriFor(Settings.System.SCREEN_BRIGHTNESS),
+                    false,
+                    brightnessObserver
+            );
+            brightnessObserverRegistered = true;
+        } catch (Throwable ignored) {
+            brightnessObserverRegistered = false;
+        }
+    }
+
+    private void unregisterBrightnessObserver() {
+        if (!brightnessObserverRegistered || brightnessObserver == null) {
+            brightnessObserverRegistered = false;
+            brightnessObserver = null;
+            return;
+        }
+        try {
+            getContentResolver().unregisterContentObserver(brightnessObserver);
+        } catch (Throwable ignored) {
+        }
+        brightnessObserverRegistered = false;
+        brightnessObserver = null;
+    }
+
+    private void handleBrightnessObserverChange() {
+        if (handler == null || !AutoBrightnessManager.isAutoEnabled(this)) {
+            return;
+        }
+        if (manager == null) {
+            manager = new AutoBrightnessManager(this);
+        }
+        boolean candidate = manager.onSystemBrightnessChanged("USER_BRIGHTNESS_OBSERVER");
+        if (candidate) {
+            handler.removeCallbacks(manualBrightnessConfirmRunnable);
+            handler.postDelayed(manualBrightnessConfirmRunnable, MANUAL_BRIGHTNESS_CONFIRM_MS);
+            updateNotification(true);
+        }
+    }
+
+    private final Runnable manualBrightnessConfirmRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (manager != null && AutoBrightnessManager.isAutoEnabled(AutoBrightnessService.this)) {
+                manager.confirmPendingExternalBrightnessChange("USER_BRIGHTNESS_OBSERVER_CONFIRM");
+                updateNotification(true);
+            }
+        }
+    };
+
     private void shutdownAndStop() {
         ProtectionServiceHealth.markServiceStopped(this, "SERVICE_STOPPED");
         if (handler != null) {
             handler.removeCallbacks(notificationRefreshRunnable);
             handler.removeCallbacks(protectionUpdateRunnable);
+            handler.removeCallbacks(manualBrightnessConfirmRunnable);
         }
+        unregisterBrightnessObserver();
         unregisterScreenReceiver();
         if (manager != null) {
             manager.stop();
             manager = null;
         }
+        ProtectionBatteryStats.flush(this);
         stopForegroundCompat();
         stopSelf();
     }
