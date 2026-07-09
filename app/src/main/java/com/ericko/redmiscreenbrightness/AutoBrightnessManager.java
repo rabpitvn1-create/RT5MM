@@ -45,6 +45,13 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final long WRITE_BUDGET_NIGHT_18_MS = 9000L;
     private static final long WRITE_BUDGET_NIGHT_15_MS = 10000L;
     private static final long WRITE_BUDGET_NIGHT_12_MS = 12000L;
+    private static final long SAME_BAND_EVALUATE_MS = 12000L;
+    private static final long USER_HOLD_EVALUATE_MS = 25000L;
+    private static final long LUX_PERSIST_MS = 30000L;
+    private static final float LUX_PERSIST_RELATIVE_DELTA = 0.12f;
+    private static final float LUX_PERSIST_ABSOLUTE_DELTA = 3f;
+    private static final float STRONG_RISE_RELATIVE = 1.8f;
+    private static final float STRONG_RISE_ABSOLUTE = 30f;
     public static final long USER_HOLD_MS = 45L * 60L * 1000L;
     private static final float USER_HOLD_RELEASE_PCT = 120f;
     private static final float USER_HOLD_RELEASE_MIN_LUX = 60f;
@@ -62,38 +69,54 @@ public class AutoBrightnessManager implements SensorEventListener {
     private int sampleCount = 0;
     private int sampleIndex = 0;
     private boolean registered = false;
+    private boolean screenAwake = true;
     private int candidatePercent = -1;
     private long candidateSince = 0L;
+    private float lastRamLux = -1f;
+    private long lastLuxPersistAt = 0L;
+    private String lastEvaluatedBandKey = "";
+    private int lastEvaluatedTargetPercent = -1;
+    private float lastEvaluatedLux = -1f;
+    private long lastEvaluateAt = 0L;
 
     public AutoBrightnessManager(Context context) {
         appContext = context.getApplicationContext();
         sensorManager = (SensorManager) appContext.getSystemService(Context.SENSOR_SERVICE);
         lightSensor = sensorManager == null ? null : sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
+        lastRamLux = getLastLux(appContext);
         saveSensorAvailable(appContext, lightSensor != null);
     }
 
     public boolean start() {
         if (!isAutoEnabled(appContext)) {
             saveMode(appContext, Mode.OFF);
+            ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.OFF, "START_DISABLED");
             return false;
         }
         if (sensorManager == null || lightSensor == null) {
             markUnavailable(appContext);
             return false;
         }
-        if (!registered) {
-            registered = sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL);
-            BrightnessLogManager.appendSnapshot(appContext, registered ? "PROTECTION_SENSOR_REGISTERED" : "PROTECTION_SENSOR_REGISTER_FAILED", getLastLux(appContext));
+        if (!screenAwake) {
+            ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.SCREEN_OFF_SLEEP, "START_WHILE_SCREEN_OFF");
+            return true;
         }
-        return registered;
+        return startSensor("PROTECTION_SENSOR_REGISTERED");
     }
 
     public void stop() {
-        if (registered && sensorManager != null) {
-            sensorManager.unregisterListener(this);
-            BrightnessLogManager.appendSnapshot(appContext, "PROTECTION_SENSOR_UNREGISTERED", getLastLux(appContext));
-        }
-        registered = false;
+        stopSensor("PROTECTION_SENSOR_UNREGISTERED");
+    }
+
+    public void enterScreenOffSleep(String event) {
+        screenAwake = false;
+        candidatePercent = -1;
+        candidateSince = 0L;
+        stopSensor("PROTECTION_SENSOR_SLEEP_SCREEN_OFF");
+        saveMode(appContext, isAutoEnabled(appContext) ? Mode.PROTECTING : Mode.OFF);
+        ProtectionBatteryStats.recordScreenOff(appContext);
+        ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.SCREEN_OFF_SLEEP, event);
+        BrightnessLogManager.appendSnapshot(appContext, event, getBestLux());
     }
 
     public void forceAutoReevaluate(String event) {
@@ -102,9 +125,13 @@ public class AutoBrightnessManager implements SensorEventListener {
         clearExternalCandidate(appContext);
         beginAppWriteGrace(appContext);
         saveMode(appContext, Mode.PROTECTING);
+        screenAwake = true;
+        startSensor("PROTECTION_SENSOR_REGISTERED_FORCE");
+        resetEvaluationThrottle();
         candidatePercent = -1;
         candidateSince = 0L;
-        BrightnessLogManager.appendSnapshot(appContext, event, getLastLux(appContext));
+        ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.RECOVERY_WAKE, event);
+        BrightnessLogManager.appendSnapshot(appContext, event, getBestLux());
         evaluateLastLux(event);
     }
 
@@ -113,32 +140,47 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     public void onScreenWake(String event) {
+        screenAwake = true;
+        ProtectionBatteryStats.recordScreenOn(appContext);
+        ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.RECOVERY_WAKE, event);
+        startSensor("PROTECTION_SENSOR_REGISTERED_SCREEN_ON");
         beginAppWriteGrace(appContext);
         clearExternalCandidate(appContext);
+        resetEvaluationThrottle();
         candidatePercent = -1;
         candidateSince = 0L;
-        BrightnessLogManager.appendSnapshot(appContext, event, getLastLux(appContext));
+        BrightnessLogManager.appendSnapshot(appContext, event, getBestLux());
         evaluateLastLux(event);
     }
 
+    public boolean isScreenOffSleep() {
+        return !screenAwake;
+    }
+
     public void evaluateLastLux(String event) {
-        float lux = getLastLux(appContext);
-        if (lux >= 0f) {
+        float lux = getBestLux();
+        if (lux >= 0f && !isScreenOffSleep()) {
             evaluateLux(lux, event);
         }
     }
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-        if (event == null || event.sensor == null || event.sensor.getType() != Sensor.TYPE_LIGHT || event.values.length == 0) {
+        if (event == null || event.sensor == null || event.sensor.getType() != Sensor.TYPE_LIGHT || event.values.length == 0 || isScreenOffSleep()) {
             return;
         }
 
         long now = System.currentTimeMillis();
+        ProtectionBatteryStats.recordSensorSample(appContext);
         float avgLux = smooth(clampLux(event.values[0]));
         float trustedLux = protectionPolicy.filterLux(avgLux, now);
-        saveLastLux(appContext, trustedLux);
-        BrightnessLogManager.logSnapshotIfChanged(appContext, "PROTECTION_SENSOR_SAMPLE", trustedLux);
+        lastRamLux = trustedLux;
+        persistLuxIfNeeded(trustedLux, now, false);
+
+        if (!shouldEvaluateSensorSample(trustedLux, now)) {
+            ProtectionBatteryStats.recordThrottledEvaluation(appContext);
+            return;
+        }
         evaluateLux(trustedLux, "PROTECTION_SENSOR_SAMPLE");
     }
 
@@ -147,16 +189,25 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     private void evaluateLux(float avgLux, String event) {
+        if (isScreenOffSleep()) {
+            ProtectionBatteryStats.recordThrottledEvaluation(appContext);
+            return;
+        }
         long now = System.currentTimeMillis();
+        lastRamLux = avgLux;
+        persistLuxIfNeeded(avgLux, now, shouldForceApply(event));
+        trackEvaluationStart(avgLux, now);
+        ProtectionBatteryStats.recordEvaluation(appContext);
 
         if (isUserHoldActive(appContext, now)) {
+            ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.USER_HOLD_LOW_POWER, "USER_HOLD_ACTIVE");
             float holdLux = getUserHoldLux(appContext);
             if (!shouldReleaseUserHold(avgLux, holdLux)) {
                 ProtectionDecisionEngine.Decision decision = makeDecision(avgLux, now, true, -1, false);
                 updateCandidate(decision);
                 saveLastDecision(appContext, decision, now);
                 saveMode(appContext, Mode.USER_HOLD);
-                BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_DECISION_" + decision.toLogSuffix(), avgLux);
+                logDecision(event, decision, avgLux);
                 return;
             }
             clearUserHold(appContext);
@@ -166,6 +217,8 @@ public class AutoBrightnessManager implements SensorEventListener {
             candidateSince = 0L;
             BrightnessLogManager.appendSnapshot(appContext, "USER_HOLD_RELEASED_BY_LUX_CHANGE", avgLux);
         }
+
+        ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.ACTIVE_SCREEN_ON, event);
 
         if (detectUserBrightnessChange(now, avgLux)) {
             return;
@@ -179,8 +232,9 @@ public class AutoBrightnessManager implements SensorEventListener {
                 shouldForceApply(event)
         );
         updateCandidate(decision);
+        lastEvaluatedTargetPercent = decision.targetPercent;
         saveLastDecision(appContext, decision, now);
-        BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_DECISION_" + decision.toLogSuffix(), avgLux);
+        logDecision(event, decision, avgLux);
 
         if (decision.action == ProtectionDecisionEngine.Action.APPLY) {
             applyAutoPercent(decision.targetPercent);
@@ -236,7 +290,8 @@ public class AutoBrightnessManager implements SensorEventListener {
             saveLastAutoRaw(appContext, raw);
             beginAppWriteGrace(appContext);
             saveMode(appContext, Mode.PROTECTING);
-            BrightnessLogManager.logSnapshotIfChanged(appContext, "PROTECTION_AT_" + percent + "_PERCENT", getLastLux(appContext));
+            ProtectionBatteryStats.recordBrightnessWriteSkip(appContext);
+            BrightnessLogManager.logSnapshotIfChanged(appContext, "PROTECTION_AT_" + percent + "_PERCENT", getBestLux());
             return;
         }
 
@@ -245,9 +300,10 @@ public class AutoBrightnessManager implements SensorEventListener {
             saveLastAutoRaw(appContext, raw);
             beginAppWriteGrace(appContext);
             saveMode(appContext, Mode.PROTECTING);
-            BrightnessLogManager.appendSnapshot(appContext, "PROTECTION_APPLIED_" + percent + "_PERCENT_RAW_" + raw, getLastLux(appContext));
+            ProtectionBatteryStats.recordBrightnessWrite(appContext);
+            BrightnessLogManager.appendSnapshot(appContext, "PROTECTION_APPLIED_" + percent + "_PERCENT_RAW_" + raw, getBestLux());
         } else {
-            BrightnessLogManager.appendSnapshot(appContext, "PROTECTION_APPLY_FAILED_" + percent + "_PERCENT_RAW_" + raw, getLastLux(appContext));
+            BrightnessLogManager.appendSnapshot(appContext, "PROTECTION_APPLY_FAILED_" + percent + "_PERCENT_RAW_" + raw, getBestLux());
         }
     }
 
@@ -328,6 +384,109 @@ public class AutoBrightnessManager implements SensorEventListener {
         return Math.min(lux, MAX_LUX);
     }
 
+    private boolean startSensor(String event) {
+        if (registered) {
+            ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.ACTIVE_SCREEN_ON, event);
+            return true;
+        }
+        registered = sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL);
+        if (registered) {
+            ProtectionBatteryStats.recordSensorRegistered(appContext);
+            ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.ACTIVE_SCREEN_ON, event);
+        }
+        BrightnessLogManager.appendSnapshot(appContext, registered ? event : "PROTECTION_SENSOR_REGISTER_FAILED", getBestLux());
+        return registered;
+    }
+
+    private void stopSensor(String event) {
+        if (registered && sensorManager != null) {
+            sensorManager.unregisterListener(this);
+            ProtectionBatteryStats.recordSensorUnregistered(appContext);
+            BrightnessLogManager.appendSnapshot(appContext, event, getBestLux());
+        }
+        registered = false;
+    }
+
+    private boolean shouldEvaluateSensorSample(float lux, long now) {
+        if (lastEvaluateAt <= 0L) {
+            return true;
+        }
+        String bandKey = protectionPolicy.getBandKey(lux);
+        if (!bandKey.equals(lastEvaluatedBandKey)) {
+            return true;
+        }
+        if (isStrongLuxRise(lux)) {
+            return true;
+        }
+        long interval = isUserHoldActive(appContext, now) ? USER_HOLD_EVALUATE_MS : SAME_BAND_EVALUATE_MS;
+        return now - lastEvaluateAt >= interval;
+    }
+
+    private boolean isStrongLuxRise(float lux) {
+        if (lastEvaluatedLux < 0f) {
+            return false;
+        }
+        float delta = lux - lastEvaluatedLux;
+        return delta >= STRONG_RISE_ABSOLUTE && lux >= lastEvaluatedLux * STRONG_RISE_RELATIVE;
+    }
+
+    private void trackEvaluationStart(float lux, long now) {
+        lastEvaluateAt = now;
+        lastEvaluatedLux = lux;
+        lastEvaluatedBandKey = protectionPolicy.getBandKey(lux);
+    }
+
+    private void resetEvaluationThrottle() {
+        lastEvaluateAt = 0L;
+        lastEvaluatedLux = -1f;
+        lastEvaluatedBandKey = "";
+        lastEvaluatedTargetPercent = -1;
+    }
+
+    private void persistLuxIfNeeded(float lux, long now, boolean force) {
+        float persisted = getLastLux(appContext);
+        boolean firstPersist = persisted < 0f;
+        boolean elapsed = now - lastLuxPersistAt >= LUX_PERSIST_MS;
+        boolean changed = hasLuxChangedEnough(persisted, lux);
+        if (force || firstPersist || elapsed || changed) {
+            saveLastLux(appContext, lux);
+            lastLuxPersistAt = now;
+            ProtectionBatteryStats.recordLuxPersisted(appContext);
+        }
+    }
+
+    private boolean hasLuxChangedEnough(float oldLux, float newLux) {
+        if (oldLux < 0f) {
+            return true;
+        }
+        float delta = Math.abs(newLux - oldLux);
+        if (delta >= LUX_PERSIST_ABSOLUTE_DELTA) {
+            return true;
+        }
+        float base = Math.max(1f, oldLux);
+        return delta / base >= LUX_PERSIST_RELATIVE_DELTA;
+    }
+
+    private void logDecision(String event, ProtectionDecisionEngine.Decision decision, float lux) {
+        if (decision == null) {
+            return;
+        }
+        ProtectionBatteryStats.recordDecision(appContext);
+        if (!"PROTECTION_SENSOR_SAMPLE".equals(event)
+                || decision.action == ProtectionDecisionEngine.Action.APPLY
+                || decision.reason == ProtectionDecisionEngine.Reason.USER_HOLD_ACTIVE
+                || decision.reason == ProtectionDecisionEngine.Reason.SENSOR_UNTRUSTED
+                || decision.reason == ProtectionDecisionEngine.Reason.INVALID_REQUEST) {
+            BrightnessLogManager.logSnapshotIfChanged(appContext, event + "_DECISION_" + decision.toLogSuffix(), lux);
+        } else {
+            ProtectionBatteryStats.recordNormalLogSkip(appContext);
+        }
+    }
+
+    private float getBestLux() {
+        return lastRamLux >= 0f ? lastRamLux : getLastLux(appContext);
+    }
+
     public static boolean hasLightSensor(Context context) {
         SensorManager manager = (SensorManager) context.getApplicationContext().getSystemService(Context.SENSOR_SERVICE);
         return manager != null && manager.getDefaultSensor(Sensor.TYPE_LIGHT) != null;
@@ -345,6 +504,9 @@ public class AutoBrightnessManager implements SensorEventListener {
             editor.remove(KEY_LAST_AUTO_RAW)
                     .remove(KEY_LAST_AUTO_AT)
                     .putLong(KEY_IGNORE_EXTERNAL_UNTIL, System.currentTimeMillis() + APP_WRITE_GRACE_MS);
+            ProtectionBatteryStats.setPowerState(context, ProtectionPowerState.RECOVERY_WAKE, "PROTECTION_STATE_ON");
+        } else {
+            ProtectionBatteryStats.setPowerState(context, ProtectionPowerState.OFF, "PROTECTION_STATE_OFF");
         }
         editor.apply();
         BrightnessLogManager.appendSnapshot(context, enabled ? "PROTECTION_STATE_ON" : "PROTECTION_STATE_OFF", getLastLux(context));
@@ -374,6 +536,7 @@ public class AutoBrightnessManager implements SensorEventListener {
                 .remove(KEY_EXTERNAL_CANDIDATE_RAW)
                 .remove(KEY_EXTERNAL_CANDIDATE_SINCE)
                 .apply();
+        ProtectionBatteryStats.setPowerState(context, ProtectionPowerState.USER_HOLD_LOW_POWER, event);
         BrightnessLevels.saveCurrentPercent(context, percent);
         ProtectionLearningStore.recordUserPreference(context, lux, percent, event);
         BrightnessLogManager.appendSnapshot(context, event, lux);
@@ -405,6 +568,7 @@ public class AutoBrightnessManager implements SensorEventListener {
                 .putBoolean(KEY_SENSOR_AVAILABLE, false)
                 .putString(KEY_AUTO_MODE, Mode.UNAVAILABLE.name())
                 .apply();
+        ProtectionBatteryStats.setPowerState(context, ProtectionPowerState.OFF, "PROTECTION_UNAVAILABLE");
         BrightnessLogManager.appendSnapshot(context, "PROTECTION_UNAVAILABLE", getLastLux(context));
     }
 
@@ -436,6 +600,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         String profile = policy.getProfileName(lastLux);
         int learnedPercent = getLearnedPercent(context, lastLux);
         int learnedConfidence = ProtectionLearningStore.getConfidence(context, lastLux);
+        ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(context);
 
         String luxText = lastLux < 0f ? "unknown" : String.format(Locale.US, "%.1f lx", lastLux);
         String holdText = hold > 0L ? (hold / 1000L) + "s" + (holdRaw >= 0 ? " / raw " + holdRaw : "") : "inactive";
@@ -444,6 +609,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         return "Protection: " + (enabled ? "On" : "Off")
                 + "\nLux: " + luxText + " / " + profile
                 + "\nMode: " + getDisplayMode(mode)
+                + "\nPower: " + powerState.name()
                 + "\nUser hold: " + holdText
                 + "\nLearned: " + learnedText;
     }
@@ -472,6 +638,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         return "Diagnostic mode"
                 + "\nProtection: " + (isAutoEnabled(context) ? "On" : "Off")
                 + "\nMode: " + getDisplayMode(getSavedMode(context))
+                + "\nPower: " + ProtectionBatteryStats.getPowerState(context).name()
                 + "\nLux: " + luxText + " / " + profile
                 + "\nCurrent: " + currentPercent + "% / raw " + currentRaw
                 + "\nTarget: " + prefs.getInt(KEY_LAST_DECISION_TARGET_PERCENT, -1) + "% / raw " + prefs.getInt(KEY_LAST_DECISION_TARGET_RAW, -1)
@@ -486,6 +653,7 @@ public class AutoBrightnessManager implements SensorEventListener {
                 + "\nLast decision: " + decisionAgeText
                 + "\nUser hold: " + holdText
                 + "\nLearned: " + learnedText
+                + "\n\n" + ProtectionBatteryStats.getDiagnosticText(context)
                 + "\n\n" + ProtectionLearningStore.getDiagnosticText(context, lastLux);
     }
 
