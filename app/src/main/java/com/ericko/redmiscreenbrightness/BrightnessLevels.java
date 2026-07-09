@@ -204,6 +204,28 @@ public final class BrightnessLevels {
         }
     }
 
+    public static boolean applyProtectedRaw(Context context, int raw) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.System.canWrite(context)) {
+                return false;
+            }
+            int clampedRaw = ProtectionCurveEngine.clampRaw(raw);
+            int currentRaw = getSystemRaw(context, -1);
+            captureAndForceManualMode(context);
+            if (currentRaw != clampedRaw) {
+                Settings.System.putInt(
+                        context.getContentResolver(),
+                        Settings.System.SCREEN_BRIGHTNESS,
+                        clampedRaw
+                );
+            }
+            saveCurrentPercent(context, ProtectionCurveEngine.nearestProtectionPercentForRaw(clampedRaw));
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     private static int getNearestPercent(int percent) {
         int bestIndex = 0;
         int bestDistance = Math.abs(percent - PERCENTS[0]);
