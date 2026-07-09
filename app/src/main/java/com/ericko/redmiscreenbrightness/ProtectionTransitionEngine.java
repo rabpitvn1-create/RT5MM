@@ -39,7 +39,7 @@ public final class ProtectionTransitionEngine {
     public void transitionToRaw(int requestedTargetRaw, String reason) {
         int safeTarget = ProtectionCurveEngine.clampRaw(requestedTargetRaw);
         int currentRaw = BrightnessLevels.getSystemRaw(appContext, safeTarget);
-        AutoBrightnessManager.markAppBrightnessWriteGrace(appContext);
+        BrightnessLevels.markAppBrightnessWriteGrace(appContext);
         if (currentRaw == safeTarget) {
             targetRaw = safeTarget;
             running = false;
@@ -74,7 +74,7 @@ public final class ProtectionTransitionEngine {
             int nextRaw = currentRaw + direction * Math.min(stepSize, distance);
             nextRaw = ProtectionCurveEngine.clampRaw(nextRaw);
 
-            AutoBrightnessManager.markAppBrightnessWriteGrace(appContext);
+            BrightnessLevels.markAppBrightnessWriteGrace(appContext);
             boolean ok = BrightnessLevels.applyProtectedRaw(appContext, nextRaw);
             if (ok) {
                 ProtectionBatteryStats.recordBrightnessWrite(appContext);
