@@ -25,6 +25,8 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final String KEY_IGNORE_EXTERNAL_UNTIL = "auto_brightness_ignore_external_until";
     private static final String KEY_EXTERNAL_CANDIDATE_RAW = "auto_brightness_external_candidate_raw";
     private static final String KEY_EXTERNAL_CANDIDATE_SINCE = "auto_brightness_external_candidate_since";
+    private static final String KEY_ENVIRONMENT_SENSOR_PAUSED_UNTIL = "environment_sensor_paused_until";
+    private static final String KEY_ENVIRONMENT_SENSOR_PAUSE_REASON = "environment_sensor_pause_reason";
     private static final String KEY_LAST_DECISION_AT = "protection_last_decision_at";
     private static final String KEY_LAST_DECISION_ACTION = "protection_last_decision_action";
     private static final String KEY_LAST_DECISION_REASON = "protection_last_decision_reason";
@@ -53,6 +55,10 @@ public class AutoBrightnessManager implements SensorEventListener {
     private static final float STRONG_RISE_ABSOLUTE = 30f;
     private static final float USER_HOLD_RELEASE_PCT = 120f;
     private static final float USER_HOLD_RELEASE_MIN_LUX = 60f;
+    private static final long ENVIRONMENT_STABLE_MS = 60L * 1000L;
+    private static final long ENVIRONMENT_SENSOR_PAUSE_MS = 2L * 60L * 1000L;
+    private static final float ENVIRONMENT_STABLE_ABSOLUTE_DELTA = 8f;
+    private static final float ENVIRONMENT_STABLE_RELATIVE_DELTA = 0.10f;
 
     public enum Mode {
         OFF, PROTECTING, USER_HOLD, UNAVAILABLE
@@ -74,6 +80,10 @@ public class AutoBrightnessManager implements SensorEventListener {
     private String lastEvaluatedBandKey = "";
     private float lastEvaluatedLux = -1f;
     private long lastEvaluateAt = 0L;
+    private float environmentAnchorLux = -1f;
+    private String environmentAnchorBandKey = "";
+    private long environmentStableSince = 0L;
+    private long environmentSensorPausedUntil = 0L;
 
     public AutoBrightnessManager(Context context) {
         appContext = context.getApplicationContext();
@@ -82,6 +92,11 @@ public class AutoBrightnessManager implements SensorEventListener {
         transitionEngine = new ProtectionTransitionEngine(appContext, new Handler(Looper.getMainLooper()));
         lastPersistedLux = getLastLux(appContext);
         lastRamLux = lastPersistedLux;
+        environmentSensorPausedUntil = getEnvironmentSensorPausedUntil(appContext);
+        if (environmentSensorPausedUntil <= System.currentTimeMillis()) {
+            clearEnvironmentSensorPause(appContext);
+            environmentSensorPausedUntil = 0L;
+        }
         saveSensorAvailable(appContext, lightSensor != null);
     }
 
@@ -100,11 +115,17 @@ public class AutoBrightnessManager implements SensorEventListener {
             ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.SCREEN_OFF_SLEEP, "START_WHILE_SCREEN_OFF");
             return true;
         }
+        if (isEnvironmentSensorPaused(System.currentTimeMillis())) {
+            ProtectionBatteryStats.recordThrottledEvaluation(appContext);
+            return true;
+        }
         return startSensor("PROTECTION_SENSOR_REGISTERED");
     }
 
     public void stop() {
         transitionEngine.cancel();
+        resetEnvironmentStability();
+        clearEnvironmentSensorPause(appContext);
         stopSensor("PROTECTION_SENSOR_UNREGISTERED");
         ProtectionBatteryStats.flush(appContext);
     }
@@ -112,6 +133,8 @@ public class AutoBrightnessManager implements SensorEventListener {
     public void enterScreenOffSleep(String event) {
         screenAwake = false;
         transitionEngine.cancel();
+        resetEnvironmentStability();
+        clearEnvironmentSensorPause(appContext);
         stopSensor("PROTECTION_SENSOR_SLEEP_SCREEN_OFF");
         saveMode(appContext, isAutoEnabled(appContext) ? Mode.PROTECTING : Mode.OFF);
         clearExternalCandidate(appContext);
@@ -122,6 +145,8 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     public void forceAutoReevaluate(String event) {
         transitionEngine.cancel();
+        resetEnvironmentStability();
+        clearEnvironmentSensorPause(appContext);
         BrightnessLevels.captureAndForceManualMode(appContext);
         clearUserHold(appContext);
         clearAutoWriteTracking(appContext);
@@ -142,6 +167,8 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     public void onScreenWake(String event) {
         screenAwake = true;
+        resetEnvironmentStability();
+        clearEnvironmentSensorPause(appContext);
         BrightnessLevels.captureAndForceManualMode(appContext);
         ProtectionBatteryStats.recordScreenOn(appContext);
         ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.RECOVERY_WAKE, event);
@@ -165,6 +192,8 @@ public class AutoBrightnessManager implements SensorEventListener {
         boolean handled = detectUserBrightnessChange(now, lux);
         if (handled) {
             transitionEngine.cancel();
+            resetEnvironmentStability();
+            clearEnvironmentSensorPause(appContext);
             ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.USER_HOLD_LOW_POWER, event);
         }
         return handled;
@@ -181,6 +210,8 @@ public class AutoBrightnessManager implements SensorEventListener {
         }
         if (detectUserBrightnessChange(now, lux)) {
             transitionEngine.cancel();
+            resetEnvironmentStability();
+            clearEnvironmentSensorPause(appContext);
         }
     }
 
@@ -189,8 +220,24 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     public void evaluateLastLux(String event) {
+        if (isScreenOffSleep()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (isEnvironmentSensorPaused(now)) {
+            ProtectionBatteryStats.recordThrottledEvaluation(appContext);
+            BrightnessLogManager.logSnapshotIfChanged(appContext, "SAME_ENVIRONMENT_SENSOR_PAUSED", getBestLux());
+            return;
+        }
+        if (environmentSensorPausedUntil > 0L) {
+            environmentSensorPausedUntil = 0L;
+            clearEnvironmentSensorPause(appContext);
+            resetEnvironmentStability();
+            startSensor("PROTECTION_SENSOR_RESUME_SAME_ENVIRONMENT");
+            return;
+        }
         float lux = getBestLux();
-        if (lux >= 0f && !isScreenOffSleep()) {
+        if (lux >= 0f) {
             evaluateLux(lux, event);
         }
     }
@@ -200,13 +247,23 @@ public class AutoBrightnessManager implements SensorEventListener {
         if (event == null || event.sensor == null || event.sensor.getType() != Sensor.TYPE_LIGHT || event.values.length == 0 || isScreenOffSleep()) {
             return;
         }
-
         long now = System.currentTimeMillis();
+        if (isEnvironmentSensorPaused(now)) {
+            ProtectionBatteryStats.recordThrottledEvaluation(appContext);
+            return;
+        }
+        if (environmentSensorPausedUntil > 0L) {
+            environmentSensorPausedUntil = 0L;
+            clearEnvironmentSensorPause(appContext);
+            resetEnvironmentStability();
+        }
+
         ProtectionBatteryStats.recordSensorSample(appContext);
         float avgLux = smooth(clampLux(event.values[0]));
         float trustedLux = protectionPolicy.filterLux(avgLux, now);
         lastRamLux = trustedLux;
         persistLuxIfNeeded(trustedLux, now, false);
+        updateEnvironmentStability(trustedLux, now);
 
         if (!shouldEvaluateSensorSample(trustedLux, now)) {
             ProtectionBatteryStats.recordThrottledEvaluation(appContext);
@@ -242,6 +299,8 @@ public class AutoBrightnessManager implements SensorEventListener {
             clearUserHold(appContext);
             clearAutoWriteTracking(appContext);
             clearExternalCandidate(appContext);
+            resetEnvironmentStability();
+            clearEnvironmentSensorPause(appContext);
             BrightnessLogManager.appendSnapshot(appContext, "USER_HOLD_RELEASED_BY_LUX_CHANGE", avgLux);
         }
 
@@ -312,6 +371,62 @@ public class AutoBrightnessManager implements SensorEventListener {
         recordUserHold(appContext, currentRaw, avgLux, "USER_HOLD_CONFIRMED_RAW_" + currentRaw + "_LAST_AUTO_RAW_" + lastAutoRaw);
         clearExternalCandidate(appContext);
         return true;
+    }
+
+    private void updateEnvironmentStability(float lux, long now) {
+        if (isUserHoldActive(appContext, now) || transitionEngine.isRunning() || !registered) {
+            resetEnvironmentStability();
+            return;
+        }
+        String bandKey = protectionPolicy.getBandKey(lux);
+        if (environmentAnchorLux < 0f || !bandKey.equals(environmentAnchorBandKey) || hasEnvironmentChangedEnough(environmentAnchorLux, lux)) {
+            environmentAnchorLux = lux;
+            environmentAnchorBandKey = bandKey;
+            environmentStableSince = now;
+            return;
+        }
+        if (environmentStableSince > 0L && now - environmentStableSince >= ENVIRONMENT_STABLE_MS) {
+            enterStableEnvironmentPause(lux, bandKey, now);
+        }
+    }
+
+    private void enterStableEnvironmentPause(float lux, String bandKey, long now) {
+        environmentSensorPausedUntil = now + ENVIRONMENT_SENSOR_PAUSE_MS;
+        saveEnvironmentSensorPause(appContext, environmentSensorPausedUntil, bandKey);
+        resetEnvironmentStability();
+        stopSensor("PROTECTION_SENSOR_PAUSED_SAME_ENVIRONMENT");
+        ProtectionBatteryStats.recordThrottledEvaluation(appContext);
+        BrightnessLogManager.appendSnapshot(appContext, "SAME_ENVIRONMENT_SENSOR_PAUSE_" + bandKey, lux);
+    }
+
+    private boolean isEnvironmentSensorPaused(long now) {
+        if (environmentSensorPausedUntil <= 0L) {
+            return false;
+        }
+        if (now < environmentSensorPausedUntil) {
+            return true;
+        }
+        environmentSensorPausedUntil = 0L;
+        clearEnvironmentSensorPause(appContext);
+        return false;
+    }
+
+    private boolean hasEnvironmentChangedEnough(float oldLux, float newLux) {
+        if (oldLux < 0f) {
+            return true;
+        }
+        float delta = Math.abs(newLux - oldLux);
+        if (delta >= ENVIRONMENT_STABLE_ABSOLUTE_DELTA) {
+            return true;
+        }
+        float base = Math.max(1f, oldLux);
+        return delta / base >= ENVIRONMENT_STABLE_RELATIVE_DELTA;
+    }
+
+    private void resetEnvironmentStability() {
+        environmentAnchorLux = -1f;
+        environmentAnchorBandKey = "";
+        environmentStableSince = 0L;
     }
 
     private boolean shouldReleaseUserHold(float currentLux, float holdLux) {
@@ -448,6 +563,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         } else {
             ProtectionBatteryStats.flush(context);
             BrightnessLevels.restorePreviousBrightnessMode(context);
+            clearEnvironmentSensorPause(context);
         }
         SharedPreferences.Editor editor = getPrefs(context).edit()
                 .putBoolean(KEY_AUTO_ENABLED, enabled)
@@ -493,6 +609,7 @@ public class AutoBrightnessManager implements SensorEventListener {
                 .remove(KEY_EXTERNAL_CANDIDATE_RAW)
                 .remove(KEY_EXTERNAL_CANDIDATE_SINCE)
                 .apply();
+        clearEnvironmentSensorPause(context);
         ProtectionBatteryStats.setPowerState(context, ProtectionPowerState.USER_HOLD_LOW_POWER, event);
         BrightnessLevels.saveCurrentPercent(context, percent);
         ProtectionLearningStore.recordUserPreference(context, lux, percent, event);
@@ -519,8 +636,13 @@ public class AutoBrightnessManager implements SensorEventListener {
         return getPrefs(context).getFloat(KEY_LAST_LUX, -1f);
     }
 
+    public static long getEnvironmentPauseRemainingMs(Context context) {
+        return Math.max(0L, getEnvironmentSensorPausedUntil(context) - System.currentTimeMillis());
+    }
+
     public static void markUnavailable(Context context) {
         BrightnessLevels.restorePreviousBrightnessMode(context);
+        clearEnvironmentSensorPause(context);
         getPrefs(context).edit()
                 .putBoolean(KEY_AUTO_ENABLED, false)
                 .putBoolean(KEY_SENSOR_AVAILABLE, false)
@@ -554,6 +676,7 @@ public class AutoBrightnessManager implements SensorEventListener {
         Mode mode = getSavedMode(context);
         long hold = getUserHoldRemainingMs(context);
         int holdRaw = getUserHoldRaw(context);
+        long environmentPause = getEnvironmentPauseRemainingMs(context);
         ProtectionPolicy policy = new ProtectionPolicy();
         String profile = policy.getProfileName(lastLux);
         int learnedPercent = getLearnedPercent(context, lastLux);
@@ -564,11 +687,13 @@ public class AutoBrightnessManager implements SensorEventListener {
         String luxText = lastLux < 0f ? "unknown" : String.format(Locale.US, "%.1f lx", lastLux);
         String holdText = hold > 0L ? (hold / 1000L) + "s" + (holdRaw >= 0 ? " / raw " + holdRaw : "") : "inactive";
         String learnedText = learnedPercent > 0 ? learnedPercent + "% / conf " + learnedConfidence : "none";
+        String sensorText = environmentPause > 0L ? "same-room paused " + (environmentPause / 1000L) + "s" : "active";
 
         return "Protection: " + (enabled ? "On" : "Off")
                 + "\nLux: " + luxText + " / " + profile
                 + "\nMode: " + getDisplayMode(mode)
                 + "\nPower: " + powerState.name()
+                + "\nSensor: " + sensorText
                 + "\nBrain target raw: " + brainRaw
                 + "\nUser hold: " + holdText
                 + "\nLearned: " + learnedText;
@@ -588,12 +713,15 @@ public class AutoBrightnessManager implements SensorEventListener {
         long hold = getUserHoldRemainingMs(context);
         int holdRaw = getUserHoldRaw(context);
         int brainRaw = ProtectionCurveEngine.getTargetRaw(lastLux);
+        long environmentPause = getEnvironmentPauseRemainingMs(context);
+        String environmentReason = prefs.getString(KEY_ENVIRONMENT_SENSOR_PAUSE_REASON, "none");
 
         String luxText = lastLux < 0f ? "unknown" : String.format(Locale.US, "%.1f lx", lastLux);
         String learnedText = learnedPercent > 0 ? learnedPercent + "%" : "none";
         String lastWriteText = lastWriteAt <= 0L ? "never" : (Math.max(0L, now - lastWriteAt) / 1000L) + "s ago";
         String decisionAgeText = lastDecisionAt <= 0L ? "never" : (Math.max(0L, now - lastDecisionAt) / 1000L) + "s ago";
         String holdText = hold > 0L ? (hold / 1000L) + "s" + (holdRaw >= 0 ? " / raw " + holdRaw : "") : "inactive";
+        String environmentText = environmentPause > 0L ? (environmentPause / 1000L) + "s remaining / " + environmentReason : "active";
 
         return "Diagnostic mode"
                 + "\nProtection: " + (isAutoEnabled(context) ? "On" : "Off")
@@ -603,6 +731,7 @@ public class AutoBrightnessManager implements SensorEventListener {
                 + "\nLux: " + luxText + " / " + profile
                 + "\nCurrent: " + currentPercent + "% / raw " + currentRaw
                 + "\nBrain target raw: " + brainRaw
+                + "\nEnvironment sensor: " + environmentText
                 + "\nTarget: " + prefs.getInt(KEY_LAST_DECISION_TARGET_PERCENT, -1) + "% / raw " + prefs.getInt(KEY_LAST_DECISION_TARGET_RAW, -1)
                 + "\nDecision: " + prefs.getString(KEY_LAST_DECISION_ACTION, "none")
                 + " / " + prefs.getString(KEY_LAST_DECISION_REASON, "none")
@@ -714,6 +843,24 @@ public class AutoBrightnessManager implements SensorEventListener {
         getPrefs(context).edit()
                 .remove(KEY_EXTERNAL_CANDIDATE_RAW)
                 .remove(KEY_EXTERNAL_CANDIDATE_SINCE)
+                .apply();
+    }
+
+    private static long getEnvironmentSensorPausedUntil(Context context) {
+        return getPrefs(context).getLong(KEY_ENVIRONMENT_SENSOR_PAUSED_UNTIL, 0L);
+    }
+
+    private static void saveEnvironmentSensorPause(Context context, long until, String reason) {
+        getPrefs(context).edit()
+                .putLong(KEY_ENVIRONMENT_SENSOR_PAUSED_UNTIL, until)
+                .putString(KEY_ENVIRONMENT_SENSOR_PAUSE_REASON, reason == null ? "same_environment" : reason)
+                .apply();
+    }
+
+    private static void clearEnvironmentSensorPause(Context context) {
+        getPrefs(context).edit()
+                .remove(KEY_ENVIRONMENT_SENSOR_PAUSED_UNTIL)
+                .remove(KEY_ENVIRONMENT_SENSOR_PAUSE_REASON)
                 .apply();
     }
 
