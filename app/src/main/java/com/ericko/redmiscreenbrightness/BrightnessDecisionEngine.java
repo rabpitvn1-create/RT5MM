@@ -12,6 +12,7 @@ public final class BrightnessDecisionEngine {
     private static final long CONFIRM_UP_SMALL_MS = 2600L;
     private static final long CONFIRM_DOWN_MS = 4800L;
     private static final long CONFIRM_DOWN_NIGHT_MS = 7000L;
+    private static final long CONFIRM_DOWN_DEEP_NIGHT_MS = 9000L;
 
     public enum Action {
         APPLY,
@@ -74,6 +75,9 @@ public final class BrightnessDecisionEngine {
                 lastNoopBaselineRaw = candidateRaw;
                 return decision(Action.NOOP, "FORCE_SAME_TARGET", candidateRaw, 0L, 1f);
             }
+            if (isDeepNightCandidate(candidateRaw) && count < MIN_SAMPLES) {
+                return decision(Action.WAIT, "WAIT_DEEP_NIGHT_WINDOW", candidateRaw, 0L, 0.25f);
+            }
             return decision(Action.APPLY, "FORCE_CONFIRMED", candidateRaw, 0L, 1f);
         }
 
@@ -95,21 +99,21 @@ public final class BrightnessDecisionEngine {
 
         int rawRange = getRawRange();
         int agreement = countWithinRaw(candidateRaw, 1);
-        if (rawRange >= RAW_NOISE_RANGE && agreement < requiredAgreement(absDelta)) {
+        if (rawRange >= RAW_NOISE_RANGE && agreement < requiredAgreement(absDelta, candidateRaw)) {
             return decision(Action.SENSOR_NOISY, "SENSOR_NOISY_RANGE_" + rawRange, candidateRaw, 0L, 0.20f);
         }
 
         long evidenceMs = getEvidenceAgeMs(now);
         long requiredMs = getRequiredConfirmationMs(delta, absDelta, candidateRaw);
         if (evidenceMs < requiredMs) {
-            return decision(Action.WAIT, delta > 0 ? "WAIT_UP_CONFIRMATION" : "WAIT_DOWN_CONFIRMATION", candidateRaw, requiredMs - evidenceMs, 0.45f);
+            return decision(Action.WAIT, delta > 0 ? "WAIT_UP_CONFIRMATION" : (isDeepNightCandidate(candidateRaw) ? "WAIT_DEEP_NIGHT_CONFIRMATION" : "WAIT_DOWN_CONFIRMATION"), candidateRaw, requiredMs - evidenceMs, 0.45f);
         }
 
-        if (agreement < requiredAgreement(absDelta)) {
-            return decision(Action.WAIT, "WAIT_MORE_AGREEMENT", candidateRaw, 0L, confidenceForAgreement(candidateRaw));
+        if (agreement < requiredAgreement(absDelta, candidateRaw)) {
+            return decision(Action.WAIT, isDeepNightCandidate(candidateRaw) ? "WAIT_DEEP_NIGHT_AGREEMENT" : "WAIT_MORE_AGREEMENT", candidateRaw, 0L, confidenceForAgreement(candidateRaw));
         }
 
-        return decision(Action.APPLY, delta > 0 ? "APPLY_CONFIRMED_UP" : "APPLY_CONFIRMED_DOWN", candidateRaw, 0L, confidenceForAgreement(candidateRaw));
+        return decision(Action.APPLY, delta > 0 ? "APPLY_CONFIRMED_UP" : (isDeepNightCandidate(candidateRaw) ? "APPLY_CONFIRMED_DEEP_NIGHT" : "APPLY_CONFIRMED_DOWN"), candidateRaw, 0L, confidenceForAgreement(candidateRaw));
     }
 
     public String getShortDebugText() {
@@ -180,11 +184,18 @@ public final class BrightnessDecisionEngine {
         return latestVsMedian >= SPIKE_RAW_DELTA && medianVsCurrent <= 1;
     }
 
-    private int requiredAgreement(int absDelta) {
+    private int requiredAgreement(int absDelta, int candidateRaw) {
+        if (isDeepNightCandidate(candidateRaw)) {
+            return 5;
+        }
         if (absDelta >= 3) {
             return 3;
         }
         return 4;
+    }
+
+    private boolean isDeepNightCandidate(int raw) {
+        return ProtectionCurveEngine.isDeepNightRaw(raw);
     }
 
     private long getEvidenceAgeMs(long now) {
@@ -200,6 +211,9 @@ public final class BrightnessDecisionEngine {
     private long getRequiredConfirmationMs(int delta, int absDelta, int candidateRaw) {
         if (delta > 0) {
             return absDelta >= 3 ? CONFIRM_UP_FAST_MS : CONFIRM_UP_SMALL_MS;
+        }
+        if (isDeepNightCandidate(candidateRaw)) {
+            return CONFIRM_DOWN_DEEP_NIGHT_MS;
         }
         if (candidateRaw <= 10) {
             return CONFIRM_DOWN_NIGHT_MS;
