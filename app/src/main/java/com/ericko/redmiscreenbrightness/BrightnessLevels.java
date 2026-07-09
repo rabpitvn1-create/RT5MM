@@ -10,6 +10,8 @@ public final class BrightnessLevels {
     private static final String KEY_PERCENT = "percent";
     private static final String KEY_PREVIOUS_BRIGHTNESS_MODE = "previous_system_brightness_mode";
     private static final String KEY_PREVIOUS_BRIGHTNESS_MODE_VALID = "previous_system_brightness_mode_valid";
+    private static final String KEY_IGNORE_EXTERNAL_UNTIL = "auto_brightness_ignore_external_until";
+    private static final long APP_WRITE_GRACE_MS = 12000L;
 
     /*
      * The only brightness levels used by the app.
@@ -48,6 +50,14 @@ public final class BrightnessLevels {
         SharedPreferences prefs = context.getApplicationContext()
                 .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         prefs.edit().putInt(KEY_PERCENT, percent).apply();
+    }
+
+    public static void markAppBrightnessWriteGrace(Context context) {
+        context.getApplicationContext()
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putLong(KEY_IGNORE_EXTERNAL_UNTIL, System.currentTimeMillis() + APP_WRITE_GRACE_MS)
+                .apply();
     }
 
     public static int getNextPercent(int current) {
