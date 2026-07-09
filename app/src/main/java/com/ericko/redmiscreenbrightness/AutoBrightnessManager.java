@@ -95,6 +95,7 @@ public class AutoBrightnessManager implements SensorEventListener {
             ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.OFF, "START_DISABLED");
             return false;
         }
+        BrightnessLevels.captureAndForceManualMode(appContext);
         if (sensorManager == null || lightSensor == null) {
             markUnavailable(appContext);
             return false;
@@ -123,6 +124,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     public void forceAutoReevaluate(String event) {
+        BrightnessLevels.captureAndForceManualMode(appContext);
         clearUserHold(appContext);
         clearAutoWriteTracking(appContext);
         clearExternalCandidate(appContext);
@@ -144,6 +146,7 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     public void onScreenWake(String event) {
         screenAwake = true;
+        BrightnessLevels.captureAndForceManualMode(appContext);
         ProtectionBatteryStats.recordScreenOn(appContext);
         ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.RECOVERY_WAKE, event);
         startSensor("PROTECTION_SENSOR_REGISTERED_SCREEN_ON");
@@ -313,8 +316,9 @@ public class AutoBrightnessManager implements SensorEventListener {
     private void applyAutoPercent(int percent) {
         int raw = BrightnessLevels.getRawForPercent(percent);
         int currentRaw = BrightnessLevels.getSystemRaw(appContext, raw);
+        beginAppWriteGrace(appContext);
+        BrightnessLevels.captureAndForceManualMode(appContext);
         if (Math.abs(currentRaw - raw) <= RAW_CHANGE_TOLERANCE) {
-            beginAppWriteGrace(appContext);
             saveLastAutoRaw(appContext, raw);
             saveMode(appContext, Mode.PROTECTING);
             ProtectionBatteryStats.recordBrightnessWriteSkip(appContext);
@@ -322,7 +326,6 @@ public class AutoBrightnessManager implements SensorEventListener {
             return;
         }
 
-        beginAppWriteGrace(appContext);
         boolean ok = BrightnessLevels.applyBrightness(appContext, percent, raw);
         if (ok) {
             saveLastAutoRaw(appContext, raw);
@@ -521,9 +524,11 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     public static void setAutoEnabled(Context context, boolean enabled) {
         if (enabled) {
+            BrightnessLevels.captureAndForceManualMode(context);
             ProtectionBatteryStats.reset(context);
         } else {
             ProtectionBatteryStats.flush(context);
+            BrightnessLevels.restorePreviousBrightnessMode(context);
         }
         SharedPreferences.Editor editor = getPrefs(context).edit()
                 .putBoolean(KEY_AUTO_ENABLED, enabled)
@@ -595,6 +600,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     public static void markUnavailable(Context context) {
+        BrightnessLevels.restorePreviousBrightnessMode(context);
         getPrefs(context).edit()
                 .putBoolean(KEY_AUTO_ENABLED, false)
                 .putBoolean(KEY_SENSOR_AVAILABLE, false)
@@ -671,6 +677,7 @@ public class AutoBrightnessManager implements SensorEventListener {
                 + "\nProtection: " + (isAutoEnabled(context) ? "On" : "Off")
                 + "\nMode: " + getDisplayMode(getSavedMode(context))
                 + "\nPower: " + ProtectionBatteryStats.getPowerState(context).name()
+                + "\nSystem brightness mode: " + getSystemBrightnessModeText(context)
                 + "\nLux: " + luxText + " / " + profile
                 + "\nCurrent: " + currentPercent + "% / raw " + currentRaw
                 + "\nTarget: " + prefs.getInt(KEY_LAST_DECISION_TARGET_PERCENT, -1) + "% / raw " + prefs.getInt(KEY_LAST_DECISION_TARGET_RAW, -1)
@@ -694,6 +701,11 @@ public class AutoBrightnessManager implements SensorEventListener {
         if (mode == Mode.USER_HOLD) return "Holding your brightness";
         if (mode == Mode.UNAVAILABLE) return "Unavailable";
         return "Off";
+    }
+
+    private static String getSystemBrightnessModeText(Context context) {
+        int mode = BrightnessLevels.getSystemBrightnessMode(context);
+        return mode == android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC ? "AUTO" : "MANUAL";
     }
 
     private static void saveLastDecision(Context context, ProtectionDecisionEngine.Decision decision, long now) {
