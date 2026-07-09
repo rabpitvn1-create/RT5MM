@@ -1,18 +1,20 @@
 package com.ericko.redmiscreenbrightness;
 
 public final class ProtectionCurveEngine {
+    private static final float DEEP_NIGHT_MAX_LUX = 0.5f;
+
     private static final float[] LUX_POINTS = new float[] {
-            1f, 3f, 6f, 10f, 16f, 25f, 40f, 65f, 100f, 150f,
-            230f, 350f, 520f, 800f, 1200f, 1800f, 2600f, 3800f, 5500f
+            0.5f, 1.5f, 3f, 6f, 10f, 16f, 25f, 40f, 65f, 100f,
+            150f, 230f, 350f, 520f, 800f, 1200f, 1800f, 2600f, 3800f, 5500f
     };
 
     private static final int[] RAW_POINTS = new int[] {
-            7, 8, 10, 11, 13, 14, 16, 17, 19, 21,
-            23, 25, 28, 31, 34, 37, 40, 43, 46
+            4, 5, 6, 7, 11, 13, 14, 16, 17, 19,
+            21, 23, 25, 28, 31, 34, 37, 40, 43, 46
     };
 
     private static final int MAX_PROTECTION_RAW = 49;
-    private static final int MIN_PROTECTION_RAW = 7;
+    private static final int MIN_PROTECTION_RAW = 4;
 
     private ProtectionCurveEngine() {
     }
@@ -30,6 +32,14 @@ public final class ProtectionCurveEngine {
             }
         }
         return MAX_PROTECTION_RAW;
+    }
+
+    public static boolean isDeepNightRaw(int raw) {
+        return raw <= RAW_POINTS[2];
+    }
+
+    public static boolean isDeepNightLux(float lux) {
+        return !Float.isNaN(lux) && lux >= 0f && lux <= DEEP_NIGHT_MAX_LUX;
     }
 
     public static int clampRaw(int raw) {
