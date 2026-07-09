@@ -18,7 +18,9 @@ public final class ProtectionServiceHealth {
     private static final String KEY_BOOT_RESTORE_AT = "protection_boot_restore_at";
     private static final String KEY_BOOT_RESTORE_ACTION = "protection_boot_restore_action";
 
-    private static final long HEARTBEAT_STALE_MS = 15000L;
+    private static final long ACTIVE_HEARTBEAT_STALE_MS = 30000L;
+    private static final long USER_HOLD_HEARTBEAT_STALE_MS = 120000L;
+    private static final long SLEEP_HEARTBEAT_STALE_MS = 10L * 60L * 1000L;
 
     private ProtectionServiceHealth() {
     }
@@ -89,15 +91,22 @@ public final class ProtectionServiceHealth {
         SharedPreferences prefs = getPrefs(context);
         long heartbeatAt = prefs.getLong(KEY_SERVICE_HEARTBEAT_AT, 0L);
         boolean foreground = prefs.getBoolean(KEY_FOREGROUND_ACTIVE, false);
+        ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(context);
         if (heartbeatAt <= 0L) {
             return "starting";
         }
-        long ageMs = Math.max(0L, System.currentTimeMillis() - heartbeatAt);
-        if (ageMs > HEARTBEAT_STALE_MS) {
-            return "limited · heartbeat " + formatAge(ageMs) + " ago";
-        }
         if (!foreground) {
             return "limited · foreground missing";
+        }
+        long ageMs = Math.max(0L, System.currentTimeMillis() - heartbeatAt);
+        if (ageMs > getHeartbeatStaleMs(powerState)) {
+            return "limited · heartbeat " + formatAge(ageMs) + " ago";
+        }
+        if (powerState == ProtectionPowerState.SCREEN_OFF_SLEEP) {
+            return "sleeping · sensor paused";
+        }
+        if (powerState == ProtectionPowerState.USER_HOLD_LOW_POWER) {
+            return "low power · user hold";
         }
         return "running";
     }
@@ -110,10 +119,13 @@ public final class ProtectionServiceHealth {
         long heartbeatAt = prefs.getLong(KEY_SERVICE_HEARTBEAT_AT, 0L);
         long stoppedAt = prefs.getLong(KEY_SERVICE_STOPPED_AT, 0L);
         long bootRestoreAt = prefs.getLong(KEY_BOOT_RESTORE_AT, 0L);
+        ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(context);
 
         return "Service health"
                 + "\nHealth: " + getMainHealthText(context)
+                + "\nPower state: " + powerState.name()
                 + "\nHeartbeat fresh: " + (isHeartbeatFresh(context) ? "yes" : "no")
+                + "\nHeartbeat stale limit: " + getHeartbeatStaleMs(powerState) + "ms"
                 + "\nLast heartbeat: " + ageText(now, heartbeatAt)
                 + "\nHeartbeat reason: " + prefs.getString(KEY_SERVICE_HEARTBEAT_REASON, "none")
                 + "\nForeground: " + (prefs.getBoolean(KEY_FOREGROUND_ACTIVE, false) ? "active" : "inactive")
@@ -132,7 +144,18 @@ public final class ProtectionServiceHealth {
         if (heartbeatAt <= 0L) {
             return false;
         }
-        return System.currentTimeMillis() - heartbeatAt <= HEARTBEAT_STALE_MS;
+        ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(context);
+        return System.currentTimeMillis() - heartbeatAt <= getHeartbeatStaleMs(powerState);
+    }
+
+    private static long getHeartbeatStaleMs(ProtectionPowerState powerState) {
+        if (powerState == ProtectionPowerState.SCREEN_OFF_SLEEP) {
+            return SLEEP_HEARTBEAT_STALE_MS;
+        }
+        if (powerState == ProtectionPowerState.USER_HOLD_LOW_POWER) {
+            return USER_HOLD_HEARTBEAT_STALE_MS;
+        }
+        return ACTIVE_HEARTBEAT_STALE_MS;
     }
 
     private static String ageText(long now, long at) {
