@@ -34,20 +34,6 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Inject original launcher icon
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          manifest = Path('app/src/main/AndroidManifest.xml')
-          text = manifest.read_text()
-          text = text.replace('android:icon="@drawable/ic_launcher"', 'android:icon="@mipmap/ic_launcher"\n        android:roundIcon="@mipmap/ic_launcher_round"')
-          text = text.replace('android:icon="@mipmap/ic_launcher"\n        android:roundIcon="@mipmap/ic_launcher_round"\n        android:roundIcon="@mipmap/ic_launcher_round"', 'android:icon="@mipmap/ic_launcher"\n        android:roundIcon="@mipmap/ic_launcher_round"')
-          manifest.write_text(text)
-          PY
-          mkdir -p app/src/main/res/mipmap-mdpi app/src/main/res/mipmap-hdpi app/src/main/res/mipmap-xhdpi app/src/main/res/mipmap-xxhdpi app/src/main/res/mipmap-xxxhdpi
-          python3 tools/icon_base64/write_original_icon.py
-
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
 
