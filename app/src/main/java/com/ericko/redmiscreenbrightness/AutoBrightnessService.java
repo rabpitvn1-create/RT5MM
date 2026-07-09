@@ -59,6 +59,7 @@ public class AutoBrightnessService extends Service {
                 return;
             }
             if (Intent.ACTION_SCREEN_ON.equals(action) || Intent.ACTION_USER_PRESENT.equals(action)) {
+                BrightnessLevels.captureAndForceManualMode(AutoBrightnessService.this);
                 manager.onScreenWake(Intent.ACTION_USER_PRESENT.equals(action) ? "PROTECTION_USER_PRESENT" : "PROTECTION_SCREEN_ON");
                 updateNotification(true);
                 scheduleProtectionUpdates();
@@ -111,16 +112,20 @@ public class AutoBrightnessService extends Service {
         ProtectionServiceHealth.markHeartbeat(this, "SERVICE_START_COMMAND");
 
         if (ACTION_STOP.equals(action) || !AutoBrightnessManager.isAutoEnabled(this)) {
+            BrightnessLevels.restorePreviousBrightnessMode(this);
             shutdownAndStop();
             return START_NOT_STICKY;
         }
 
         if (!AutoBrightnessManager.hasLightSensor(this)) {
             AutoBrightnessManager.markUnavailable(this);
+            BrightnessLevels.restorePreviousBrightnessMode(this);
             ProtectionServiceHealth.markServiceStopped(this, "LIGHT_SENSOR_UNAVAILABLE");
             shutdownAndStop();
             return START_NOT_STICKY;
         }
+
+        BrightnessLevels.captureAndForceManualMode(this);
 
         if (!foregroundStarted) {
             startForegroundSafely();
@@ -160,6 +165,7 @@ public class AutoBrightnessService extends Service {
         if (handler != null) {
             handler.removeCallbacks(notificationRefreshRunnable);
             handler.removeCallbacks(protectionUpdateRunnable);
+            handler.removeCallbacks(manualBrightnessConfirmRunnable);
         }
         unregisterBrightnessObserver();
         unregisterScreenReceiver();
@@ -192,6 +198,7 @@ public class AutoBrightnessService extends Service {
             lastNotificationSignature = buildNotificationSignature();
         } catch (Throwable t) {
             AutoBrightnessManager.setAutoEnabled(this, false);
+            BrightnessLevels.restorePreviousBrightnessMode(this);
             ProtectionServiceHealth.markServiceStopped(this, "FOREGROUND_START_FAILED");
             stopSelf();
         }
@@ -474,6 +481,7 @@ public class AutoBrightnessService extends Service {
     }
 
     public static void start(Context context) {
+        BrightnessLevels.captureAndForceManualMode(context);
         AutoBrightnessManager.setAutoEnabled(context, true);
         Intent intent = new Intent(context, AutoBrightnessService.class);
         intent.setAction(ACTION_START);
@@ -486,6 +494,7 @@ public class AutoBrightnessService extends Service {
 
     public static void stop(Context context) {
         AutoBrightnessManager.setAutoEnabled(context, false);
+        BrightnessLevels.restorePreviousBrightnessMode(context);
         ProtectionServiceHealth.markServiceStopped(context, "USER_STOP_REQUEST");
         Intent intent = new Intent(context, AutoBrightnessService.class);
         intent.setAction(ACTION_STOP);
