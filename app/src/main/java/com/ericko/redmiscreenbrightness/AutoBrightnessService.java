@@ -14,6 +14,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 
 import java.util.Locale;
 
@@ -24,8 +25,8 @@ public class AutoBrightnessService extends Service {
     private static final String CHANNEL_ID = "screen_protection_channel";
     private static final String CHANNEL_NAME = "Screen Protection";
     private static final int NOTIFICATION_ID = 3001;
-    private static final long NOTIFICATION_REFRESH_MS = 30000L;
-    private static final long PROTECTION_UPDATE_MS = 5000L;
+    private static final long NOTIFICATION_REFRESH_MS = 60000L;
+    private static final long PROTECTION_UPDATE_MS = 15000L;
 
     private AutoBrightnessManager manager;
     private Handler handler;
@@ -41,10 +42,18 @@ public class AutoBrightnessService extends Service {
             }
             String action = intent.getAction();
             ProtectionServiceHealth.markHeartbeat(AutoBrightnessService.this, "SCREEN_EVENT");
-            if (Intent.ACTION_SCREEN_ON.equals(action) || Intent.ACTION_USER_PRESENT.equals(action)) {
-                if (manager == null) {
-                    manager = new AutoBrightnessManager(AutoBrightnessService.this);
+            if (manager == null) {
+                manager = new AutoBrightnessManager(AutoBrightnessService.this);
+            }
+            if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                manager.enterScreenOffSleep("PROTECTION_SCREEN_OFF");
+                if (handler != null) {
+                    handler.removeCallbacks(protectionUpdateRunnable);
                 }
+                updateNotification(true);
+                return;
+            }
+            if (Intent.ACTION_SCREEN_ON.equals(action) || Intent.ACTION_USER_PRESENT.equals(action)) {
                 manager.onScreenWake(Intent.ACTION_USER_PRESENT.equals(action) ? "PROTECTION_USER_PRESENT" : "PROTECTION_SCREEN_ON");
                 updateNotification(true);
                 scheduleProtectionUpdates();
@@ -70,11 +79,13 @@ public class AutoBrightnessService extends Service {
                 return;
             }
             ProtectionServiceHealth.markHeartbeat(AutoBrightnessService.this, "PROTECTION_INTERVAL_TICK");
-            if (manager != null) {
+            if (manager != null && !manager.isScreenOffSleep()) {
                 manager.evaluateLastLux("PROTECTION_INTERVAL_TICK");
             }
             updateNotification(false);
-            handler.postDelayed(this, PROTECTION_UPDATE_MS);
+            if (handler != null && manager != null && !manager.isScreenOffSleep()) {
+                handler.postDelayed(this, PROTECTION_UPDATE_MS);
+            }
         }
     };
 
@@ -112,13 +123,24 @@ public class AutoBrightnessService extends Service {
         if (manager == null) {
             manager = new AutoBrightnessManager(this);
         }
-        manager.start();
+
+        if (isDeviceInteractive()) {
+            manager.start();
+            scheduleProtectionUpdates();
+        } else {
+            manager.enterScreenOffSleep("PROTECTION_START_SCREEN_OFF");
+            if (handler != null) {
+                handler.removeCallbacks(protectionUpdateRunnable);
+            }
+        }
+
         ProtectionServiceHealth.markHeartbeat(this, "SERVICE_RUNNING");
         scheduleNotificationRefresh();
-        scheduleProtectionUpdates();
 
         if (ACTION_REFRESH.equals(action)) {
-            manager.evaluateLastLux("PROTECTION_REFRESH_REQUEST");
+            if (!manager.isScreenOffSleep()) {
+                manager.evaluateLastLux("PROTECTION_REFRESH_REQUEST");
+            }
             ProtectionServiceHealth.markHeartbeat(this, "PROTECTION_REFRESH_REQUEST");
             updateNotification(true);
         }
@@ -198,15 +220,17 @@ public class AutoBrightnessService extends Service {
         float lux = AutoBrightnessManager.getLastLux(this);
         long holdMs = AutoBrightnessManager.getUserHoldRemainingMs(this);
         int holdRaw = AutoBrightnessManager.getUserHoldRaw(this);
+        ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(this);
 
         String luxText = formatLux(lux);
         String modeText = AutoBrightnessManager.getDisplayMode(mode);
         String holdText = holdMs > 0L ? "Holding: " + (holdMs / 1000L) + "s" + (holdRaw >= 0 ? " / raw " + holdRaw : "") : "Holding: inactive";
-        String contentText = "Lux: " + luxText + " · Raw: " + raw + " · " + modeText;
+        String contentText = "Lux: " + luxText + " · Raw: " + raw + " · " + powerState.name();
         String bigText = "Screen Protection đang bật"
                 + "\nLux hiện tại: " + luxText
                 + "\nBrightness: " + percent + "% / raw " + raw
                 + "\nMode: " + modeText
+                + "\nPower: " + powerState.name()
                 + "\n" + holdText;
 
         Notification.Builder builder;
@@ -233,10 +257,11 @@ public class AutoBrightnessService extends Service {
     private String buildNotificationSignature() {
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
         int percent = BrightnessLevels.getCurrentPercent(this);
-        long holdBucket = AutoBrightnessManager.getUserHoldRemainingMs(this) / 1000L;
+        long holdBucket = AutoBrightnessManager.getUserHoldRemainingMs(this) / 60L;
         float lux = AutoBrightnessManager.getLastLux(this);
         int raw = BrightnessLevels.getSystemRaw(this, -1);
-        return mode.name() + "|" + percent + "|" + raw + "|" + Math.round(lux) + "|" + holdBucket;
+        ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(this);
+        return mode.name() + "|" + powerState.name() + "|" + percent + "|" + raw + "|" + Math.round(lux) + "|" + holdBucket;
     }
 
     private void scheduleNotificationRefresh() {
@@ -252,6 +277,9 @@ public class AutoBrightnessService extends Service {
             handler = new Handler(Looper.getMainLooper());
         }
         handler.removeCallbacks(protectionUpdateRunnable);
+        if (manager == null || manager.isScreenOffSleep()) {
+            return;
+        }
         handler.postDelayed(protectionUpdateRunnable, PROTECTION_UPDATE_MS);
     }
 
@@ -288,6 +316,7 @@ public class AutoBrightnessService extends Service {
             return;
         }
         IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SCREEN_OFF);
         filter.addAction(Intent.ACTION_SCREEN_ON);
         filter.addAction(Intent.ACTION_USER_PRESENT);
         try {
@@ -333,6 +362,21 @@ public class AutoBrightnessService extends Service {
         }
     }
 
+    private boolean isDeviceInteractive() {
+        try {
+            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (powerManager == null) {
+                return true;
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+                return powerManager.isInteractive();
+            }
+            return powerManager.isScreenOn();
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
     private String formatLux(float lux) {
         if (lux < 0f) {
             return "unknown";
@@ -358,18 +402,20 @@ public class AutoBrightnessService extends Service {
         intent.setAction(ACTION_STOP);
         try {
             context.startService(intent);
-        } catch (Throwable t) {
-            context.stopService(intent);
+        } catch (Throwable ignored) {
         }
     }
 
     public static void refresh(Context context) {
         Intent intent = new Intent(context, AutoBrightnessService.class);
         intent.setAction(ACTION_REFRESH);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(intent);
-        } else {
-            context.startService(intent);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+        } catch (Throwable ignored) {
         }
     }
 }
