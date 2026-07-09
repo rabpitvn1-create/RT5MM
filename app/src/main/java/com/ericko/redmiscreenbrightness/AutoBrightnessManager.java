@@ -73,6 +73,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     private int candidatePercent = -1;
     private long candidateSince = 0L;
     private float lastRamLux = -1f;
+    private float lastPersistedLux = -1f;
     private long lastLuxPersistAt = 0L;
     private String lastEvaluatedBandKey = "";
     private int lastEvaluatedTargetPercent = -1;
@@ -83,7 +84,8 @@ public class AutoBrightnessManager implements SensorEventListener {
         appContext = context.getApplicationContext();
         sensorManager = (SensorManager) appContext.getSystemService(Context.SENSOR_SERVICE);
         lightSensor = sensorManager == null ? null : sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
-        lastRamLux = getLastLux(appContext);
+        lastPersistedLux = getLastLux(appContext);
+        lastRamLux = lastPersistedLux;
         saveSensorAvailable(appContext, lightSensor != null);
     }
 
@@ -106,6 +108,7 @@ public class AutoBrightnessManager implements SensorEventListener {
 
     public void stop() {
         stopSensor("PROTECTION_SENSOR_UNREGISTERED");
+        ProtectionBatteryStats.flush(appContext);
     }
 
     public void enterScreenOffSleep(String event) {
@@ -151,6 +154,34 @@ public class AutoBrightnessManager implements SensorEventListener {
         candidateSince = 0L;
         BrightnessLogManager.appendSnapshot(appContext, event, getBestLux());
         evaluateLastLux(event);
+    }
+
+    public boolean onSystemBrightnessChanged(String event) {
+        if (!isAutoEnabled(appContext)) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        float lux = getBestLux();
+        if (lux < 0f) {
+            lux = getLastLux(appContext);
+        }
+        boolean handled = detectUserBrightnessChange(now, lux);
+        if (handled) {
+            ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.USER_HOLD_LOW_POWER, event);
+        }
+        return handled;
+    }
+
+    public void confirmPendingExternalBrightnessChange(String event) {
+        if (!isAutoEnabled(appContext)) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        float lux = getBestLux();
+        if (lux < 0f) {
+            lux = getLastLux(appContext);
+        }
+        detectUserBrightnessChange(now, lux);
     }
 
     public boolean isScreenOffSleep() {
@@ -219,10 +250,6 @@ public class AutoBrightnessManager implements SensorEventListener {
         }
 
         ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.ACTIVE_SCREEN_ON, event);
-
-        if (detectUserBrightnessChange(now, avgLux)) {
-            return;
-        }
 
         ProtectionDecisionEngine.Decision decision = makeDecision(
                 avgLux,
@@ -444,12 +471,12 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     private void persistLuxIfNeeded(float lux, long now, boolean force) {
-        float persisted = getLastLux(appContext);
-        boolean firstPersist = persisted < 0f;
+        boolean firstPersist = lastPersistedLux < 0f;
         boolean elapsed = now - lastLuxPersistAt >= LUX_PERSIST_MS;
-        boolean changed = hasLuxChangedEnough(persisted, lux);
+        boolean changed = hasLuxChangedEnough(lastPersistedLux, lux);
         if (force || firstPersist || elapsed || changed) {
             saveLastLux(appContext, lux);
+            lastPersistedLux = lux;
             lastLuxPersistAt = now;
             ProtectionBatteryStats.recordLuxPersisted(appContext);
         }
@@ -493,6 +520,11 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     public static void setAutoEnabled(Context context, boolean enabled) {
+        if (enabled) {
+            ProtectionBatteryStats.reset(context);
+        } else {
+            ProtectionBatteryStats.flush(context);
+        }
         SharedPreferences.Editor editor = getPrefs(context).edit()
                 .putBoolean(KEY_AUTO_ENABLED, enabled)
                 .putString(KEY_AUTO_MODE, enabled ? Mode.PROTECTING.name() : Mode.OFF.name())
