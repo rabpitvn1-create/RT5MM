@@ -6,10 +6,11 @@ The app is not meant to be a general brightness controller. Its job is to keep t
 
 ## Latest APK update
 
-- Version: 1.0.27
+- Version: 1.0.29
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
+- Release note: build recovered after removing duplicate launcher icon resources.
 
 ## Product direction
 
