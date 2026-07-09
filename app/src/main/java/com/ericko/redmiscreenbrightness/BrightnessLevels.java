@@ -17,14 +17,16 @@ public final class BrightnessLevels {
      * The only brightness levels used by the app.
      * Keep these raw values conservative for Redmi/HyperOS to protect the screen,
      * reduce eye strain, and save battery.
+     *
+     * The 5/8/10% buckets are reserved for confirmed deep-night behavior.
      */
     private static final int[] PERCENTS = new int[] {
-            12, 15, 18, 20, 23, 25, 28, 30, 33, 35,
-            38, 40, 43, 45, 48, 50, 53, 55, 58, 60
+            5, 8, 10, 12, 15, 18, 20, 23, 25, 28, 30, 33,
+            35, 38, 40, 43, 45, 48, 50, 53, 55, 58, 60
     };
     private static final int[] RAW_VALUES = new int[] {
-            7, 8, 10, 11, 13, 14, 16, 17, 19, 21,
-            23, 25, 28, 31, 34, 37, 40, 43, 46, 49
+            4, 5, 6, 7, 8, 10, 11, 13, 14, 16, 17, 19,
+            21, 23, 25, 28, 31, 34, 37, 40, 43, 46, 49
     };
 
     private static final int MIN_RAW = 1;
