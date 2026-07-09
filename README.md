@@ -6,7 +6,7 @@ The app is not meant to be a general brightness controller. Its job is to keep t
 
 ## Latest APK update
 
-- Version: 1.0.24
+- Version: 1.0.25
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
@@ -23,10 +23,20 @@ Internal behavior:
 
 - Uses the ambient light sensor while the screen is on.
 - Suspends sensor work when the screen is off while keeping protection enabled.
+- Turns the system auto-brightness mode off while protection is enabled, then restores the previous system mode when protection is stopped.
 - Keeps brightness inside conservative protection buckets.
 - Uses a foreground service while protection is enabled.
 - Restores protection after boot or app update if it was enabled.
 - Treats manual brightness changes as a user hold instead of immediately fighting the user.
+
+## System brightness handoff
+
+Screen Protection now takes exclusive control more cleanly:
+
+- When protection starts, the app captures the previous system brightness mode.
+- It immediately switches Android/HyperOS brightness mode to `MANUAL` so the system auto-brightness controller does not run in parallel.
+- While protection is running, screen wake and service refresh paths force `MANUAL` again in case another feature re-enabled auto brightness.
+- When protection stops, the app restores the captured previous mode. If the system was using auto brightness before protection started, it is restored to auto; if it was already manual, it stays manual.
 
 ## Battery-aware protection
 
