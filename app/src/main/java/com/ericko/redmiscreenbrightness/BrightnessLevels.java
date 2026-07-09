@@ -8,6 +8,8 @@ import android.provider.Settings;
 public final class BrightnessLevels {
     public static final String PREFS = "brightness_state";
     private static final String KEY_PERCENT = "percent";
+    private static final String KEY_PREVIOUS_BRIGHTNESS_MODE = "previous_system_brightness_mode";
+    private static final String KEY_PREVIOUS_BRIGHTNESS_MODE_VALID = "previous_system_brightness_mode_valid";
 
     /*
      * The only brightness levels used by the app.
@@ -100,6 +102,75 @@ public final class BrightnessLevels {
         }
     }
 
+    public static int getSystemBrightnessMode(Context context) {
+        try {
+            return Settings.System.getInt(
+                    context.getContentResolver(),
+                    Settings.System.SCREEN_BRIGHTNESS_MODE,
+                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            );
+        } catch (Throwable t) {
+            return Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL;
+        }
+    }
+
+    public static boolean captureAndForceManualMode(Context context) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.System.canWrite(context)) {
+                return false;
+            }
+            Context appContext = context.getApplicationContext();
+            SharedPreferences prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            int currentMode = getSystemBrightnessMode(appContext);
+            SharedPreferences.Editor editor = prefs.edit();
+            if (!prefs.getBoolean(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID, false)) {
+                editor.putInt(KEY_PREVIOUS_BRIGHTNESS_MODE, currentMode)
+                        .putBoolean(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID, true);
+            }
+            editor.apply();
+
+            if (currentMode != Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL) {
+                Settings.System.putInt(
+                        appContext.getContentResolver(),
+                        Settings.System.SCREEN_BRIGHTNESS_MODE,
+                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                );
+            }
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    public static boolean restorePreviousBrightnessMode(Context context) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.System.canWrite(context)) {
+                return false;
+            }
+            Context appContext = context.getApplicationContext();
+            SharedPreferences prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            if (!prefs.getBoolean(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID, false)) {
+                return true;
+            }
+            int previousMode = prefs.getInt(
+                    KEY_PREVIOUS_BRIGHTNESS_MODE,
+                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            );
+            Settings.System.putInt(
+                    appContext.getContentResolver(),
+                    Settings.System.SCREEN_BRIGHTNESS_MODE,
+                    previousMode
+            );
+            prefs.edit()
+                    .remove(KEY_PREVIOUS_BRIGHTNESS_MODE)
+                    .remove(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID)
+                    .apply();
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     public static int getMaxPercent() {
         return PERCENTS[PERCENTS.length - 1];
     }
@@ -116,19 +187,7 @@ public final class BrightnessLevels {
 
             int clampedRaw = clampRaw(raw);
             int currentRaw = getSystemRaw(context, -1);
-            int currentMode = Settings.System.getInt(
-                    context.getContentResolver(),
-                    Settings.System.SCREEN_BRIGHTNESS_MODE,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-            );
-
-            if (currentMode != Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL) {
-                Settings.System.putInt(
-                        context.getContentResolver(),
-                        Settings.System.SCREEN_BRIGHTNESS_MODE,
-                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-                );
-            }
+            captureAndForceManualMode(context);
 
             if (currentRaw != clampedRaw) {
                 Settings.System.putInt(
