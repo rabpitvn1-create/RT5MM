@@ -6,11 +6,11 @@ The app is not meant to be a general brightness controller. Its job is to keep t
 
 ## Latest APK update
 
-- Version: 1.0.30
+- Version: 1.0.31
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
-- Release note: adds stable same-room environment detection so the light sensor can pause when lux only drifts slightly inside the same environment.
+- Release note: replaces hard same-room sensor pause with a rolling-window brightness decision gate.
 
 ## Product direction
 
@@ -46,23 +46,34 @@ This version connects the Brightness Brain foundation into the active manager pa
 - `ProtectionCurveEngine` supplies the active lux-to-raw target.
 - `AutoBrightnessManager` no longer jumps directly to bucket brightness during normal protection decisions.
 - The manager writes a protected raw target and lets `ProtectionTransitionEngine` move toward it smoothly.
-- Transition is cancelled on screen-off sleep, service stop, force recovery, and confirmed user brightness hold.
+- Transition is cancelled on screen-off sleep, service stop, force recovery, noisy sensor decisions, spike rejection, and confirmed user brightness hold.
 - The raw target is saved as the last app-driven raw value so the brightness observer can distinguish app writes from real user changes.
 - User hold is shortened for personal-mode behavior: normal hold is about 15 minutes; night hold is about 8 minutes.
 
-## Stable environment pause
+## Brightness Decision Gate
 
-When the user moves around inside the same room, ambient lux can drift slightly even though the environment has not meaningfully changed. The app now detects that case and backs off the light sensor:
+The app no longer treats every lux change as a reason to change brightness. The core question is now:
 
-- Same lux band.
-- Lux drift stays small: about 8 lx absolute or about 10% relative.
-- Stability lasts about 60 seconds.
-- Not in user hold.
-- Not currently transitioning brightness.
+`Is there enough evidence to change protected raw brightness?`
 
-When those conditions are true, the app pauses the light sensor for about 2 minutes. Protection stays on, brightness is not handed back to the system, and the sensor resumes on screen wake, manual recovery, or when the pause window expires.
+`BrightnessDecisionEngine` keeps a short rolling window of lux-derived raw targets and decides between:
 
-Diagnostic mode now shows whether the sensor is active or paused because the app believes the user is still in the same environment.
+- `NOOP`: current raw already matches the stable target.
+- `WAIT`: more evidence is needed.
+- `IGNORE_SPIKE`: the latest lux jump looks like a short spike.
+- `SENSOR_NOISY`: samples are too inconsistent to trust.
+- `APPLY`: the target raw is confirmed and can be transitioned.
+
+Important behavior:
+
+- Decisions are based on target raw, not lux alone.
+- A one-sample spike is not allowed to write brightness.
+- Small raw changes need stronger confirmation than large upward changes.
+- Downward changes are confirmed more slowly than upward changes.
+- Night downward changes are confirmed slowest.
+- Same-target maintenance is throttled so the app does not keep refreshing its own last-write timestamp and accidentally hide real user adjustments.
+
+This replaces the earlier hard same-room sensor pause. The app keeps observing while the screen is on, but it becomes harder for noisy lux data to trigger brightness writes.
 
 ## Battery-aware protection
 
@@ -77,9 +88,8 @@ Battery strategy:
 
 - Screen off -> unregister light sensor and stop protection interval ticks.
 - Screen on -> register light sensor and recovery evaluate.
-- Same lux band -> throttle evaluation instead of running the full decision pipeline every sensor sample.
-- Stable same-room environment -> pause the light sensor briefly and re-sample later.
-- Strong lux rise -> evaluate immediately so brightness can recover quickly.
+- Sensor samples are kept as observations; brightness writes are gated by the decision engine.
+- Strong upward evidence can apply faster than downward evidence.
 - Last lux persistence uses RAM cache first and avoids reading SharedPreferences on the sensor hot path.
 - Battery counters are RAM-first and flushed on service stop instead of writing SharedPreferences on every sensor sample.
 - Manual brightness changes are detected by a `SCREEN_BRIGHTNESS` ContentObserver instead of relying on the sensor loop.
