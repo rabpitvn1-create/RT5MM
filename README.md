@@ -6,7 +6,7 @@ The app is not meant to be a general brightness controller. Its job is to keep t
 
 ## Latest APK update
 
-- Version: 1.0.25
+- Version: 1.0.26
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
@@ -37,6 +37,18 @@ Screen Protection now takes exclusive control more cleanly:
 - It immediately switches Android/HyperOS brightness mode to `MANUAL` so the system auto-brightness controller does not run in parallel.
 - While protection is running, screen wake and service refresh paths force `MANUAL` again in case another feature re-enabled auto brightness.
 - When protection stops, the app restores the captured previous mode. If the system was using auto brightness before protection started, it is restored to auto; if it was already manual, it stays manual.
+
+## Brightness Brain v3 foundation
+
+This version starts the Personal Mode redesign inspired by Auto-Shine's best ideas, without copying its public-app tradeoffs:
+
+- `ProtectionCurveEngine` adds a protected interpolated lux-to-raw curve.
+- The curve keeps the Redmi protection clamp: raw 7 to raw 49.
+- `BrightnessLevels.applyProtectedRaw()` allows the app to write protected raw values directly instead of only writing bucket percentages.
+- `ProtectionTransitionEngine` adds a guarded transition queue for smoother raw changes.
+- Transition writes refresh app-write grace before every step so the brightness observer does not mistake the app's own transition for a manual user override.
+
+This is the foundation layer. The next layers are manager integration, event-driven short sampling, context detection, game profile, game-exit recovery, and context-based learning.
 
 ## Battery-aware protection
 
@@ -142,5 +154,6 @@ Future protection-policy work should borrow ideas from:
 
 - `wluma`: learn from manual user brightness changes after a cooldown instead of reacting to every small adjustment.
 - `Clight`: use curves, smooth transitions, sensor-rejection logic, and pause/resume behavior instead of scattered if/else rules.
+- `Auto-Shine`: event-driven sampling, interpolated curves, and minimal intervention.
 
 The app should still keep the core promise: simple outside, intelligent inside.
