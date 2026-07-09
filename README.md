@@ -6,12 +6,11 @@ The app is not meant to be a general brightness controller. Its job is to keep t
 
 ## Latest APK update
 
-- Version: 1.0.31
+- Version: 1.0.32
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
-- Release note: publishes the rolling-window brightness decision gate build.
-- Publish trigger: release APK build requested after decision-gate update.
+- Release note: adds a confirmed deep-night raw floor so true 0 lux can settle near raw 4 instead of raw 7.
 
 ## Product direction
 
@@ -51,6 +50,24 @@ This version connects the Brightness Brain foundation into the active manager pa
 - The raw target is saved as the last app-driven raw value so the brightness observer can distinguish app writes from real user changes.
 - User hold is shortened for personal-mode behavior: normal hold is about 15 minutes; night hold is about 8 minutes.
 
+## Deep Night Floor
+
+Real-world tuning showed that raw 7 can still feel bright at 0 lux. The active raw curve now supports a lower confirmed deep-night floor:
+
+- 0 to 0.5 lx -> raw 4
+- 0.5 to 1.5 lx -> raw 5
+- 1.5 to 3 lx -> raw 6
+- 3 to 6 lx -> raw 7
+
+This does not mean every sudden 0 lux reading immediately forces raw 4. Deep-night targets go through the decision gate:
+
+- They need a rolling-window confirmation.
+- They require stronger sample agreement than normal changes.
+- They use a slower confirmation time than ordinary dimming.
+- Force-refresh paths do not bypass the deep-night confirmation guard.
+
+This is meant to handle true dark-room use without letting a hand-covered sensor or short lux drop instantly make the screen too dark.
+
 ## Brightness Decision Gate
 
 The app no longer treats every lux change as a reason to change brightness. The core question is now:
@@ -71,7 +88,7 @@ Important behavior:
 - A one-sample spike is not allowed to write brightness.
 - Small raw changes need stronger confirmation than large upward changes.
 - Downward changes are confirmed more slowly than upward changes.
-- Night downward changes are confirmed slowest.
+- Deep-night downward changes are confirmed slowest.
 - Same-target maintenance is throttled so the app does not keep refreshing its own last-write timestamp and accidentally hide real user adjustments.
 
 This replaces the earlier hard same-room sensor pause. The app keeps observing while the screen is on, but it becomes harder for noisy lux data to trigger brightness writes.
@@ -100,8 +117,11 @@ Battery strategy:
 
 ## Current protection buckets
 
-These are the raw values currently used by the app. The curve uses 20 protection buckets, including a guarded night-protection range below 20% and a smoother mid-high raw progression:
+These are the raw values currently used by the app. The curve includes guarded deep-night buckets below the normal 12% floor:
 
+- 5% = raw 4
+- 8% = raw 5
+- 10% = raw 6
 - 12% = raw 7
 - 15% = raw 8
 - 18% = raw 10
@@ -125,37 +145,38 @@ These are the raw values currently used by the app. The curve uses 20 protection
 
 The percentages are app-level protection buckets, not a promise that Android or HyperOS will display the same visual percentage on every device.
 
-## Lux curve
+## Active raw curve
 
-The protection policy uses 20 lux bands. It is intentionally dense at night and indoors, then gradually wider in bright-room and outdoor ranges:
+The active protection curve is intentionally dense in the dark-room range, then gradually wider in bright-room and outdoor ranges:
 
-- up to 1 lx -> 12%
-- up to 3 lx -> 15%
-- up to 6 lx -> 18%
-- up to 10 lx -> 20%
-- up to 16 lx -> 23%
-- up to 25 lx -> 25%
-- up to 40 lx -> 28%
-- up to 65 lx -> 30%
-- up to 100 lx -> 33%
-- up to 150 lx -> 35%
-- up to 230 lx -> 38%
-- up to 350 lx -> 40%
-- up to 520 lx -> 43%
-- up to 800 lx -> 45%
-- up to 1200 lx -> 48%
-- up to 1800 lx -> 50%
-- up to 2600 lx -> 53%
-- up to 3800 lx -> 55%
-- up to 5500 lx -> 58%
-- above 5500 lx -> 60%
+- up to 0.5 lx -> raw 4
+- up to 1.5 lx -> raw 5
+- up to 3 lx -> raw 6
+- up to 6 lx -> raw 7
+- up to 10 lx -> raw 11
+- up to 16 lx -> raw 13
+- up to 25 lx -> raw 14
+- up to 40 lx -> raw 16
+- up to 65 lx -> raw 17
+- up to 100 lx -> raw 19
+- up to 150 lx -> raw 21
+- up to 230 lx -> raw 23
+- up to 350 lx -> raw 25
+- up to 520 lx -> raw 28
+- up to 800 lx -> raw 31
+- up to 1200 lx -> raw 34
+- up to 1800 lx -> raw 37
+- up to 2600 lx -> raw 40
+- up to 3800 lx -> raw 43
+- up to 5500 lx -> raw 46
+- above 5500 lx -> raw 49
 
 Movement rules:
 
-- Dimming into 12%, 15%, or 18% requires longer stability.
-- Leaving night-protection brightness is faster than entering it.
-- Strong lux increases can move more than one bucket.
-- Write budget is dynamic: slower for sub-20 dimming, faster for upward movement.
+- Dimming into raw 4, 5, or 6 requires stronger confirmation.
+- Leaving deep-night brightness is faster than entering it.
+- Strong upward evidence can move sooner than downward evidence.
+- User brightness changes still override protection through user hold.
 
 ## Quick Settings Tile
 
