@@ -21,6 +21,21 @@ public final class ProtectionBatteryStats {
     private static final String KEY_BRIGHTNESS_WRITE_SKIPS = "battery_brightness_write_skips";
     private static final String KEY_NORMAL_LOG_SKIPS = "battery_normal_log_skips";
 
+    private static final long SAME_STATE_WRITE_MS = 60000L;
+
+    private static long sensorRegisteredDelta = 0L;
+    private static long sensorUnregisteredDelta = 0L;
+    private static long screenOnDelta = 0L;
+    private static long screenOffDelta = 0L;
+    private static long sensorSamplesDelta = 0L;
+    private static long evaluationsDelta = 0L;
+    private static long throttledEvaluationsDelta = 0L;
+    private static long luxPersistedDelta = 0L;
+    private static long decisionsDelta = 0L;
+    private static long brightnessWritesDelta = 0L;
+    private static long brightnessWriteSkipsDelta = 0L;
+    private static long normalLogSkipsDelta = 0L;
+
     private ProtectionBatteryStats() {
     }
 
@@ -30,11 +45,17 @@ public final class ProtectionBatteryStats {
         }
         SharedPreferences prefs = getPrefs(context);
         String oldState = prefs.getString(KEY_POWER_STATE, ProtectionPowerState.OFF.name());
+        long now = System.currentTimeMillis();
+        long lastAt = prefs.getLong(KEY_LAST_POWER_AT, 0L);
+        boolean changed = !state.name().equals(oldState);
+        if (!changed && now - lastAt < SAME_STATE_WRITE_MS) {
+            return;
+        }
         SharedPreferences.Editor editor = prefs.edit()
                 .putString(KEY_POWER_STATE, state.name())
                 .putString(KEY_LAST_POWER_REASON, safe(reason))
-                .putLong(KEY_LAST_POWER_AT, System.currentTimeMillis());
-        if (!state.name().equals(oldState)) {
+                .putLong(KEY_LAST_POWER_AT, now);
+        if (changed) {
             editor.putLong(KEY_STATE_TRANSITIONS, prefs.getLong(KEY_STATE_TRANSITIONS, 0L) + 1L);
         }
         editor.apply();
@@ -49,52 +70,174 @@ public final class ProtectionBatteryStats {
         }
     }
 
+    public static void reset(Context context) {
+        synchronized (ProtectionBatteryStats.class) {
+            sensorRegisteredDelta = 0L;
+            sensorUnregisteredDelta = 0L;
+            screenOnDelta = 0L;
+            screenOffDelta = 0L;
+            sensorSamplesDelta = 0L;
+            evaluationsDelta = 0L;
+            throttledEvaluationsDelta = 0L;
+            luxPersistedDelta = 0L;
+            decisionsDelta = 0L;
+            brightnessWritesDelta = 0L;
+            brightnessWriteSkipsDelta = 0L;
+            normalLogSkipsDelta = 0L;
+        }
+        getPrefs(context).edit()
+                .putLong(KEY_STATE_TRANSITIONS, 0L)
+                .putLong(KEY_SENSOR_REGISTERED, 0L)
+                .putLong(KEY_SENSOR_UNREGISTERED, 0L)
+                .putLong(KEY_SCREEN_ON, 0L)
+                .putLong(KEY_SCREEN_OFF, 0L)
+                .putLong(KEY_SENSOR_SAMPLES, 0L)
+                .putLong(KEY_EVALUATIONS, 0L)
+                .putLong(KEY_THROTTLED_EVALUATIONS, 0L)
+                .putLong(KEY_LUX_PERSISTED, 0L)
+                .putLong(KEY_DECISIONS, 0L)
+                .putLong(KEY_BRIGHTNESS_WRITES, 0L)
+                .putLong(KEY_BRIGHTNESS_WRITE_SKIPS, 0L)
+                .putLong(KEY_NORMAL_LOG_SKIPS, 0L)
+                .apply();
+    }
+
+    public static void flush(Context context) {
+        long sensorRegistered;
+        long sensorUnregistered;
+        long screenOn;
+        long screenOff;
+        long sensorSamples;
+        long evaluations;
+        long throttledEvaluations;
+        long luxPersisted;
+        long decisions;
+        long brightnessWrites;
+        long brightnessWriteSkips;
+        long normalLogSkips;
+
+        synchronized (ProtectionBatteryStats.class) {
+            sensorRegistered = sensorRegisteredDelta;
+            sensorUnregistered = sensorUnregisteredDelta;
+            screenOn = screenOnDelta;
+            screenOff = screenOffDelta;
+            sensorSamples = sensorSamplesDelta;
+            evaluations = evaluationsDelta;
+            throttledEvaluations = throttledEvaluationsDelta;
+            luxPersisted = luxPersistedDelta;
+            decisions = decisionsDelta;
+            brightnessWrites = brightnessWritesDelta;
+            brightnessWriteSkips = brightnessWriteSkipsDelta;
+            normalLogSkips = normalLogSkipsDelta;
+
+            sensorRegisteredDelta = 0L;
+            sensorUnregisteredDelta = 0L;
+            screenOnDelta = 0L;
+            screenOffDelta = 0L;
+            sensorSamplesDelta = 0L;
+            evaluationsDelta = 0L;
+            throttledEvaluationsDelta = 0L;
+            luxPersistedDelta = 0L;
+            decisionsDelta = 0L;
+            brightnessWritesDelta = 0L;
+            brightnessWriteSkipsDelta = 0L;
+            normalLogSkipsDelta = 0L;
+        }
+
+        if (sensorRegistered == 0L && sensorUnregistered == 0L && screenOn == 0L && screenOff == 0L
+                && sensorSamples == 0L && evaluations == 0L && throttledEvaluations == 0L
+                && luxPersisted == 0L && decisions == 0L && brightnessWrites == 0L
+                && brightnessWriteSkips == 0L && normalLogSkips == 0L) {
+            return;
+        }
+
+        SharedPreferences prefs = getPrefs(context);
+        prefs.edit()
+                .putLong(KEY_SENSOR_REGISTERED, prefs.getLong(KEY_SENSOR_REGISTERED, 0L) + sensorRegistered)
+                .putLong(KEY_SENSOR_UNREGISTERED, prefs.getLong(KEY_SENSOR_UNREGISTERED, 0L) + sensorUnregistered)
+                .putLong(KEY_SCREEN_ON, prefs.getLong(KEY_SCREEN_ON, 0L) + screenOn)
+                .putLong(KEY_SCREEN_OFF, prefs.getLong(KEY_SCREEN_OFF, 0L) + screenOff)
+                .putLong(KEY_SENSOR_SAMPLES, prefs.getLong(KEY_SENSOR_SAMPLES, 0L) + sensorSamples)
+                .putLong(KEY_EVALUATIONS, prefs.getLong(KEY_EVALUATIONS, 0L) + evaluations)
+                .putLong(KEY_THROTTLED_EVALUATIONS, prefs.getLong(KEY_THROTTLED_EVALUATIONS, 0L) + throttledEvaluations)
+                .putLong(KEY_LUX_PERSISTED, prefs.getLong(KEY_LUX_PERSISTED, 0L) + luxPersisted)
+                .putLong(KEY_DECISIONS, prefs.getLong(KEY_DECISIONS, 0L) + decisions)
+                .putLong(KEY_BRIGHTNESS_WRITES, prefs.getLong(KEY_BRIGHTNESS_WRITES, 0L) + brightnessWrites)
+                .putLong(KEY_BRIGHTNESS_WRITE_SKIPS, prefs.getLong(KEY_BRIGHTNESS_WRITE_SKIPS, 0L) + brightnessWriteSkips)
+                .putLong(KEY_NORMAL_LOG_SKIPS, prefs.getLong(KEY_NORMAL_LOG_SKIPS, 0L) + normalLogSkips)
+                .apply();
+    }
+
     public static void recordSensorRegistered(Context context) {
-        increment(context, KEY_SENSOR_REGISTERED);
+        synchronized (ProtectionBatteryStats.class) {
+            sensorRegisteredDelta++;
+        }
     }
 
     public static void recordSensorUnregistered(Context context) {
-        increment(context, KEY_SENSOR_UNREGISTERED);
+        synchronized (ProtectionBatteryStats.class) {
+            sensorUnregisteredDelta++;
+        }
     }
 
     public static void recordScreenOn(Context context) {
-        increment(context, KEY_SCREEN_ON);
+        synchronized (ProtectionBatteryStats.class) {
+            screenOnDelta++;
+        }
     }
 
     public static void recordScreenOff(Context context) {
-        increment(context, KEY_SCREEN_OFF);
+        synchronized (ProtectionBatteryStats.class) {
+            screenOffDelta++;
+        }
     }
 
     public static void recordSensorSample(Context context) {
-        increment(context, KEY_SENSOR_SAMPLES);
+        synchronized (ProtectionBatteryStats.class) {
+            sensorSamplesDelta++;
+        }
     }
 
     public static void recordEvaluation(Context context) {
-        increment(context, KEY_EVALUATIONS);
+        synchronized (ProtectionBatteryStats.class) {
+            evaluationsDelta++;
+        }
     }
 
     public static void recordThrottledEvaluation(Context context) {
-        increment(context, KEY_THROTTLED_EVALUATIONS);
+        synchronized (ProtectionBatteryStats.class) {
+            throttledEvaluationsDelta++;
+        }
     }
 
     public static void recordLuxPersisted(Context context) {
-        increment(context, KEY_LUX_PERSISTED);
+        synchronized (ProtectionBatteryStats.class) {
+            luxPersistedDelta++;
+        }
     }
 
     public static void recordDecision(Context context) {
-        increment(context, KEY_DECISIONS);
+        synchronized (ProtectionBatteryStats.class) {
+            decisionsDelta++;
+        }
     }
 
     public static void recordBrightnessWrite(Context context) {
-        increment(context, KEY_BRIGHTNESS_WRITES);
+        synchronized (ProtectionBatteryStats.class) {
+            brightnessWritesDelta++;
+        }
     }
 
     public static void recordBrightnessWriteSkip(Context context) {
-        increment(context, KEY_BRIGHTNESS_WRITE_SKIPS);
+        synchronized (ProtectionBatteryStats.class) {
+            brightnessWriteSkipsDelta++;
+        }
     }
 
     public static void recordNormalLogSkip(Context context) {
-        increment(context, KEY_NORMAL_LOG_SKIPS);
+        synchronized (ProtectionBatteryStats.class) {
+            normalLogSkipsDelta++;
+        }
     }
 
     public static String getDiagnosticText(Context context) {
@@ -102,28 +245,49 @@ public final class ProtectionBatteryStats {
         long now = System.currentTimeMillis();
         long lastAt = prefs.getLong(KEY_LAST_POWER_AT, 0L);
         String lastAge = lastAt <= 0L ? "never" : (Math.max(0L, now - lastAt) / 1000L) + "s ago";
+
+        long sensorRegistered;
+        long sensorUnregistered;
+        long screenOn;
+        long screenOff;
+        long sensorSamples;
+        long evaluations;
+        long throttledEvaluations;
+        long luxPersisted;
+        long decisions;
+        long brightnessWrites;
+        long brightnessWriteSkips;
+        long normalLogSkips;
+        synchronized (ProtectionBatteryStats.class) {
+            sensorRegistered = sensorRegisteredDelta;
+            sensorUnregistered = sensorUnregisteredDelta;
+            screenOn = screenOnDelta;
+            screenOff = screenOffDelta;
+            sensorSamples = sensorSamplesDelta;
+            evaluations = evaluationsDelta;
+            throttledEvaluations = throttledEvaluationsDelta;
+            luxPersisted = luxPersistedDelta;
+            decisions = decisionsDelta;
+            brightnessWrites = brightnessWritesDelta;
+            brightnessWriteSkips = brightnessWriteSkipsDelta;
+            normalLogSkips = normalLogSkipsDelta;
+        }
+
         return "Battery layer"
                 + "\nPower state: " + prefs.getString(KEY_POWER_STATE, ProtectionPowerState.OFF.name())
                 + "\nLast power reason: " + prefs.getString(KEY_LAST_POWER_REASON, "none")
                 + "\nLast power change: " + lastAge
                 + "\nState transitions: " + prefs.getLong(KEY_STATE_TRANSITIONS, 0L)
-                + "\nScreen on/off: " + prefs.getLong(KEY_SCREEN_ON, 0L) + " / " + prefs.getLong(KEY_SCREEN_OFF, 0L)
-                + "\nSensor reg/unreg: " + prefs.getLong(KEY_SENSOR_REGISTERED, 0L) + " / " + prefs.getLong(KEY_SENSOR_UNREGISTERED, 0L)
-                + "\nSensor samples: " + prefs.getLong(KEY_SENSOR_SAMPLES, 0L)
-                + "\nEvaluations: " + prefs.getLong(KEY_EVALUATIONS, 0L)
-                + "\nThrottled evaluations: " + prefs.getLong(KEY_THROTTLED_EVALUATIONS, 0L)
-                + "\nLux persisted: " + prefs.getLong(KEY_LUX_PERSISTED, 0L)
-                + "\nDecisions: " + prefs.getLong(KEY_DECISIONS, 0L)
-                + "\nBrightness writes/skips: " + prefs.getLong(KEY_BRIGHTNESS_WRITES, 0L) + " / " + prefs.getLong(KEY_BRIGHTNESS_WRITE_SKIPS, 0L)
-                + "\nNormal log skips: " + prefs.getLong(KEY_NORMAL_LOG_SKIPS, 0L);
-    }
-
-    private static void increment(Context context, String key) {
-        if (context == null || key == null) {
-            return;
-        }
-        SharedPreferences prefs = getPrefs(context);
-        prefs.edit().putLong(key, prefs.getLong(key, 0L) + 1L).apply();
+                + "\nScreen on/off: " + (prefs.getLong(KEY_SCREEN_ON, 0L) + screenOn) + " / " + (prefs.getLong(KEY_SCREEN_OFF, 0L) + screenOff)
+                + "\nSensor reg/unreg: " + (prefs.getLong(KEY_SENSOR_REGISTERED, 0L) + sensorRegistered) + " / " + (prefs.getLong(KEY_SENSOR_UNREGISTERED, 0L) + sensorUnregistered)
+                + "\nSensor samples: " + (prefs.getLong(KEY_SENSOR_SAMPLES, 0L) + sensorSamples)
+                + "\nEvaluations: " + (prefs.getLong(KEY_EVALUATIONS, 0L) + evaluations)
+                + "\nThrottled evaluations: " + (prefs.getLong(KEY_THROTTLED_EVALUATIONS, 0L) + throttledEvaluations)
+                + "\nLux persisted: " + (prefs.getLong(KEY_LUX_PERSISTED, 0L) + luxPersisted)
+                + "\nDecisions: " + (prefs.getLong(KEY_DECISIONS, 0L) + decisions)
+                + "\nBrightness writes/skips: " + (prefs.getLong(KEY_BRIGHTNESS_WRITES, 0L) + brightnessWrites) + " / " + (prefs.getLong(KEY_BRIGHTNESS_WRITE_SKIPS, 0L) + brightnessWriteSkips)
+                + "\nNormal log skips: " + (prefs.getLong(KEY_NORMAL_LOG_SKIPS, 0L) + normalLogSkips)
+                + "\nCounter storage: RAM hot path / flushed on stop";
     }
 
     private static String safe(String value) {
