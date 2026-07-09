@@ -69,16 +69,18 @@ public final class BrightnessDecisionEngine {
         int candidateRaw = getMedianRaw();
         int delta = candidateRaw - currentRaw;
         int absDelta = Math.abs(delta);
+        boolean deepNightCandidate = isDeepNightCandidate(candidateRaw);
 
-        if (forceApply) {
+        if (forceApply && !deepNightCandidate) {
             if (absDelta <= SAME_TARGET_TOLERANCE_RAW) {
                 lastNoopBaselineRaw = candidateRaw;
                 return decision(Action.NOOP, "FORCE_SAME_TARGET", candidateRaw, 0L, 1f);
             }
-            if (isDeepNightCandidate(candidateRaw) && count < MIN_SAMPLES) {
-                return decision(Action.WAIT, "WAIT_DEEP_NIGHT_WINDOW", candidateRaw, 0L, 0.25f);
-            }
             return decision(Action.APPLY, "FORCE_CONFIRMED", candidateRaw, 0L, 1f);
+        }
+
+        if (forceApply && deepNightCandidate && count < MIN_SAMPLES) {
+            return decision(Action.WAIT, "WAIT_DEEP_NIGHT_WINDOW", candidateRaw, 0L, 0.25f);
         }
 
         if (count < MIN_SAMPLES) {
@@ -88,9 +90,9 @@ public final class BrightnessDecisionEngine {
         if (absDelta <= SAME_TARGET_TOLERANCE_RAW) {
             if (lastNoopBaselineRaw != candidateRaw) {
                 lastNoopBaselineRaw = candidateRaw;
-                return decision(Action.NOOP, "NOOP_SAME_TARGET", candidateRaw, 0L, confidenceForAgreement(candidateRaw));
+                return decision(Action.NOOP, forceApply && deepNightCandidate ? "DEEP_NIGHT_AT_TARGET" : "NOOP_SAME_TARGET", candidateRaw, 0L, confidenceForAgreement(candidateRaw));
             }
-            return decision(Action.WAIT, "NOOP_SAME_TARGET", candidateRaw, 0L, confidenceForAgreement(candidateRaw));
+            return decision(Action.WAIT, forceApply && deepNightCandidate ? "DEEP_NIGHT_AT_TARGET" : "NOOP_SAME_TARGET", candidateRaw, 0L, confidenceForAgreement(candidateRaw));
         }
 
         if (isLikelySpike(latestRaw, candidateRaw, currentRaw)) {
@@ -106,14 +108,14 @@ public final class BrightnessDecisionEngine {
         long evidenceMs = getEvidenceAgeMs(now);
         long requiredMs = getRequiredConfirmationMs(delta, absDelta, candidateRaw);
         if (evidenceMs < requiredMs) {
-            return decision(Action.WAIT, delta > 0 ? "WAIT_UP_CONFIRMATION" : (isDeepNightCandidate(candidateRaw) ? "WAIT_DEEP_NIGHT_CONFIRMATION" : "WAIT_DOWN_CONFIRMATION"), candidateRaw, requiredMs - evidenceMs, 0.45f);
+            return decision(Action.WAIT, delta > 0 ? "WAIT_UP_CONFIRMATION" : (deepNightCandidate ? "WAIT_DEEP_NIGHT_CONFIRMATION" : "WAIT_DOWN_CONFIRMATION"), candidateRaw, requiredMs - evidenceMs, 0.45f);
         }
 
         if (agreement < requiredAgreement(absDelta, candidateRaw)) {
-            return decision(Action.WAIT, isDeepNightCandidate(candidateRaw) ? "WAIT_DEEP_NIGHT_AGREEMENT" : "WAIT_MORE_AGREEMENT", candidateRaw, 0L, confidenceForAgreement(candidateRaw));
+            return decision(Action.WAIT, deepNightCandidate ? "WAIT_DEEP_NIGHT_AGREEMENT" : "WAIT_MORE_AGREEMENT", candidateRaw, 0L, confidenceForAgreement(candidateRaw));
         }
 
-        return decision(Action.APPLY, delta > 0 ? "APPLY_CONFIRMED_UP" : (isDeepNightCandidate(candidateRaw) ? "APPLY_CONFIRMED_DEEP_NIGHT" : "APPLY_CONFIRMED_DOWN"), candidateRaw, 0L, confidenceForAgreement(candidateRaw));
+        return decision(Action.APPLY, delta > 0 ? "APPLY_CONFIRMED_UP" : (deepNightCandidate ? "APPLY_CONFIRMED_DEEP_NIGHT" : "APPLY_CONFIRMED_DOWN"), candidateRaw, 0L, confidenceForAgreement(candidateRaw));
     }
 
     public String getShortDebugText() {
