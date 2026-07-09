@@ -50,10 +50,12 @@ public final class BrightnessDecisionEngine {
     private final long[] timeWindow = new long[WINDOW_SIZE];
     private int count = 0;
     private int index = 0;
+    private int lastNoopBaselineRaw = -1;
 
     public void reset() {
         count = 0;
         index = 0;
+        lastNoopBaselineRaw = -1;
         Arrays.fill(luxWindow, -1f);
         Arrays.fill(rawWindow, -1);
         Arrays.fill(timeWindow, 0L);
@@ -69,6 +71,7 @@ public final class BrightnessDecisionEngine {
 
         if (forceApply) {
             if (absDelta <= SAME_TARGET_TOLERANCE_RAW) {
+                lastNoopBaselineRaw = candidateRaw;
                 return decision(Action.NOOP, "FORCE_SAME_TARGET", candidateRaw, 0L, 1f);
             }
             return decision(Action.APPLY, "FORCE_CONFIRMED", candidateRaw, 0L, 1f);
@@ -79,7 +82,11 @@ public final class BrightnessDecisionEngine {
         }
 
         if (absDelta <= SAME_TARGET_TOLERANCE_RAW) {
-            return decision(Action.NOOP, "NOOP_SAME_TARGET", candidateRaw, 0L, confidenceForAgreement(candidateRaw));
+            if (lastNoopBaselineRaw != candidateRaw) {
+                lastNoopBaselineRaw = candidateRaw;
+                return decision(Action.NOOP, "NOOP_SAME_TARGET", candidateRaw, 0L, confidenceForAgreement(candidateRaw));
+            }
+            return decision(Action.WAIT, "NOOP_SAME_TARGET", candidateRaw, 0L, confidenceForAgreement(candidateRaw));
         }
 
         if (isLikelySpike(latestRaw, candidateRaw, currentRaw)) {
