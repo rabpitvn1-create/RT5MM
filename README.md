@@ -2,11 +2,11 @@
 
 A personal one-button Android screen protection app for Redmi / HyperOS.
 
-The app is not meant to be a general brightness controller. Its job is to keep the screen inside conservative brightness levels, run quietly in the foreground when enabled, respect manual brightness changes, and restore protection after reboot when possible.
+The app is not meant to be a general brightness controller. Its job is to keep the screen inside conservative brightness levels, run quietly in the foreground when enabled, respect manual brightness changes, save battery where possible, and restore protection after reboot when possible.
 
 ## Latest APK update
 
-- Version: 1.0.21
+- Version: 1.0.22
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
@@ -21,11 +21,30 @@ Main screen philosophy:
 
 Internal behavior:
 
-- Uses the ambient light sensor.
+- Uses the ambient light sensor while the screen is on.
+- Suspends sensor work when the screen is off while keeping protection enabled.
 - Keeps brightness inside conservative protection buckets.
 - Uses a foreground service while protection is enabled.
 - Restores protection after boot or app update if it was enabled.
 - Treats manual brightness changes as a user hold instead of immediately fighting the user.
+
+## Battery-aware protection
+
+The app now uses a battery-aware protection layer:
+
+- `ACTIVE_SCREEN_ON`: sensor is active and protection evaluates brightness.
+- `SCREEN_OFF_SLEEP`: screen is off, the light sensor is unregistered, and interval evaluation is suspended.
+- `RECOVERY_WAKE`: screen just woke, service restarted, or protection was refreshed; the app evaluates quickly once and returns to active mode.
+- `USER_HOLD_LOW_POWER`: the user has manually changed brightness, so protection backs off and evaluates less aggressively.
+
+Battery strategy:
+
+- Screen off -> unregister light sensor.
+- Screen on -> register light sensor and recovery evaluate.
+- Same lux band -> throttle evaluation instead of running the full decision pipeline every sensor sample.
+- Strong lux rise -> evaluate immediately so brightness can recover quickly.
+- Last lux persistence is throttled to avoid writing SharedPreferences for every tiny sensor sample.
+- Normal sensor-sample logs are suppressed unless a decision is important; diagnostic mode shows battery counters.
 
 ## Current protection buckets
 
