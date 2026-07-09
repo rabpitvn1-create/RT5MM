@@ -6,7 +6,7 @@ The app is not meant to be a general brightness controller. Its job is to keep t
 
 ## Latest APK update
 
-- Version: 1.0.22
+- Version: 1.0.23
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
@@ -33,17 +33,20 @@ Internal behavior:
 The app now uses a battery-aware protection layer:
 
 - `ACTIVE_SCREEN_ON`: sensor is active and protection evaluates brightness.
-- `SCREEN_OFF_SLEEP`: screen is off, the light sensor is unregistered, and interval evaluation is suspended.
+- `SCREEN_OFF_SLEEP`: screen is off, the light sensor is unregistered, interval evaluation is suspended, and the notification avoids live raw-brightness reads.
 - `RECOVERY_WAKE`: screen just woke, service restarted, or protection was refreshed; the app evaluates quickly once and returns to active mode.
 - `USER_HOLD_LOW_POWER`: the user has manually changed brightness, so protection backs off and evaluates less aggressively.
 
-Battery strategy:
+Battery v2 strategy:
 
-- Screen off -> unregister light sensor.
+- Screen off -> unregister light sensor and stop protection interval ticks.
 - Screen on -> register light sensor and recovery evaluate.
 - Same lux band -> throttle evaluation instead of running the full decision pipeline every sensor sample.
 - Strong lux rise -> evaluate immediately so brightness can recover quickly.
-- Last lux persistence is throttled to avoid writing SharedPreferences for every tiny sensor sample.
+- Last lux persistence uses RAM cache first and avoids reading SharedPreferences on the sensor hot path.
+- Battery counters are RAM-first and flushed on service stop instead of writing SharedPreferences on every sensor sample.
+- Manual brightness changes are detected by a `SCREEN_BRIGHTNESS` ContentObserver instead of relying on the sensor loop.
+- Service health understands `SCREEN_OFF_SLEEP`, so sleep mode is not falsely reported as stale/limited.
 - Normal sensor-sample logs are suppressed unless a decision is important; diagnostic mode shows battery counters.
 
 ## Current protection buckets
