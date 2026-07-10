@@ -38,4 +38,16 @@ public class ProtectionAmbientControllerTest {
         assertTrue(result.intermediateRaw <= 14);
         assertTrue(result.intermediateRaw < 40);
     }
+
+    @Test
+    public void zeroTimestampDoesNotRestartInitialWarmup() {
+        ProtectionAmbientController controller = new ProtectionAmbientController();
+
+        ProtectionAmbientController.Result first = controller.onLuxSample(0L, 10f, 7);
+        ProtectionAmbientController.Result second = controller.onLuxSample(200L, 10f, 7);
+
+        assertEquals(ProtectionAmbientController.Action.HOLD, first.action);
+        assertEquals(ProtectionAmbientController.Action.INITIALIZED, second.action);
+        assertTrue(second.ambientValid);
+    }
 }
