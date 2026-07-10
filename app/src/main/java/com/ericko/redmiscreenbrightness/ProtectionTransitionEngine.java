@@ -41,20 +41,54 @@ public final class ProtectionTransitionEngine {
         int safeFinalTarget = ProtectionCurveEngine.clampRaw(requestedFinalTargetRaw);
         int currentRaw = BrightnessLevels.getSystemRaw(appContext, safeRescue);
         if (safeRescue <= currentRaw) {
-            BrightnessLogManager.logSnapshotIfChanged(appContext, "SUNLIGHT_RESCUE_SKIPPED_RAW_" + currentRaw + "_TO_" + safeRescue + "_FINAL_" + safeFinalTarget + "_" + safe(reason), AutoBrightnessManager.getLastLux(appContext));
+            BrightnessLogManager.logSnapshotIfChanged(appContext,
+                    "SUNLIGHT_RESCUE_SKIPPED_RAW_" + currentRaw + "_TO_" + safeRescue
+                            + "_FINAL_" + safeFinalTarget + "_" + safe(reason),
+                    AutoBrightnessManager.getLastLux(appContext));
             return;
         }
 
-        running = false;
-        targetRaw = safeRescue;
-        handler.removeCallbacks(stepRunnable);
+        stopCurrentTransitionAt(safeRescue);
         BrightnessLevels.markAppBrightnessWriteGrace(appContext);
         boolean ok = BrightnessLevels.applyProtectedRaw(appContext, safeRescue);
         if (ok) {
             ProtectionBatteryStats.recordBrightnessWrite(appContext);
-            BrightnessLogManager.appendSnapshot(appContext, "SUNLIGHT_RESCUE_RAW_" + currentRaw + "_TO_" + safeRescue + "_FINAL_" + safeFinalTarget + "_" + safe(reason), AutoBrightnessManager.getLastLux(appContext));
+            BrightnessLogManager.appendSnapshot(appContext,
+                    "SUNLIGHT_RESCUE_RAW_" + currentRaw + "_TO_" + safeRescue
+                            + "_FINAL_" + safeFinalTarget + "_" + safe(reason),
+                    AutoBrightnessManager.getLastLux(appContext));
         } else {
-            BrightnessLogManager.appendSnapshot(appContext, "SUNLIGHT_RESCUE_WRITE_FAILED_RAW_" + safeRescue + "_" + safe(reason), AutoBrightnessManager.getLastLux(appContext));
+            BrightnessLogManager.appendSnapshot(appContext,
+                    "SUNLIGHT_RESCUE_WRITE_FAILED_RAW_" + safeRescue + "_" + safe(reason),
+                    AutoBrightnessManager.getLastLux(appContext));
+        }
+    }
+
+    public void settleToComfortableDarkRaw(int requestedSettleRaw, int requestedFinalTargetRaw, String reason) {
+        int safeSettle = ProtectionCurveEngine.clampRaw(requestedSettleRaw);
+        int safeFinalTarget = ProtectionCurveEngine.clampRaw(requestedFinalTargetRaw);
+        int currentRaw = BrightnessLevels.getSystemRaw(appContext, safeSettle);
+        if (safeSettle >= currentRaw) {
+            BrightnessLogManager.logSnapshotIfChanged(appContext,
+                    "DARK_SETTLE_SKIPPED_RAW_" + currentRaw + "_TO_" + safeSettle
+                            + "_FINAL_" + safeFinalTarget + "_" + safe(reason),
+                    AutoBrightnessManager.getLastLux(appContext));
+            return;
+        }
+
+        stopCurrentTransitionAt(safeSettle);
+        BrightnessLevels.markAppBrightnessWriteGrace(appContext);
+        boolean ok = BrightnessLevels.applyProtectedRaw(appContext, safeSettle);
+        if (ok) {
+            ProtectionBatteryStats.recordBrightnessWrite(appContext);
+            BrightnessLogManager.appendSnapshot(appContext,
+                    "DARK_SETTLE_RAW_" + currentRaw + "_TO_" + safeSettle
+                            + "_FINAL_" + safeFinalTarget + "_" + safe(reason),
+                    AutoBrightnessManager.getLastLux(appContext));
+        } else {
+            BrightnessLogManager.appendSnapshot(appContext,
+                    "DARK_SETTLE_WRITE_FAILED_RAW_" + safeSettle + "_" + safe(reason),
+                    AutoBrightnessManager.getLastLux(appContext));
         }
     }
 
@@ -67,13 +101,17 @@ public final class ProtectionTransitionEngine {
             running = false;
             BrightnessLevels.applyProtectedRaw(appContext, safeTarget);
             ProtectionBatteryStats.recordBrightnessWriteSkip(appContext);
-            BrightnessLogManager.logSnapshotIfChanged(appContext, "TRANSITION_ALREADY_AT_RAW_" + safeTarget + "_" + safe(reason), AutoBrightnessManager.getLastLux(appContext));
+            BrightnessLogManager.logSnapshotIfChanged(appContext,
+                    "TRANSITION_ALREADY_AT_RAW_" + safeTarget + "_" + safe(reason),
+                    AutoBrightnessManager.getLastLux(appContext));
             return;
         }
         targetRaw = safeTarget;
         running = true;
         handler.removeCallbacks(stepRunnable);
-        BrightnessLogManager.appendSnapshot(appContext, "TRANSITION_START_RAW_" + currentRaw + "_TO_" + safeTarget + "_" + safe(reason), AutoBrightnessManager.getLastLux(appContext));
+        BrightnessLogManager.appendSnapshot(appContext,
+                "TRANSITION_START_RAW_" + currentRaw + "_TO_" + safeTarget + "_" + safe(reason),
+                AutoBrightnessManager.getLastLux(appContext));
         handler.post(stepRunnable);
     }
 
@@ -86,7 +124,9 @@ public final class ProtectionTransitionEngine {
             int currentRaw = BrightnessLevels.getSystemRaw(appContext, targetRaw);
             if (currentRaw == targetRaw) {
                 running = false;
-                BrightnessLogManager.logSnapshotIfChanged(appContext, "TRANSITION_DONE_RAW_" + targetRaw, AutoBrightnessManager.getLastLux(appContext));
+                BrightnessLogManager.logSnapshotIfChanged(appContext,
+                        "TRANSITION_DONE_RAW_" + targetRaw,
+                        AutoBrightnessManager.getLastLux(appContext));
                 return;
             }
 
@@ -101,20 +141,30 @@ public final class ProtectionTransitionEngine {
             if (ok) {
                 ProtectionBatteryStats.recordBrightnessWrite(appContext);
             } else {
-                BrightnessLogManager.appendSnapshot(appContext, "TRANSITION_WRITE_FAILED_RAW_" + nextRaw, AutoBrightnessManager.getLastLux(appContext));
+                BrightnessLogManager.appendSnapshot(appContext,
+                        "TRANSITION_WRITE_FAILED_RAW_" + nextRaw,
+                        AutoBrightnessManager.getLastLux(appContext));
                 running = false;
                 return;
             }
 
             if (nextRaw == targetRaw) {
                 running = false;
-                BrightnessLogManager.logSnapshotIfChanged(appContext, "TRANSITION_DONE_RAW_" + targetRaw, AutoBrightnessManager.getLastLux(appContext));
+                BrightnessLogManager.logSnapshotIfChanged(appContext,
+                        "TRANSITION_DONE_RAW_" + targetRaw,
+                        AutoBrightnessManager.getLastLux(appContext));
                 return;
             }
 
             handler.postDelayed(this, getStepDelayMs(currentRaw, targetRaw, distance));
         }
     };
+
+    private void stopCurrentTransitionAt(int raw) {
+        running = false;
+        targetRaw = raw;
+        handler.removeCallbacks(stepRunnable);
+    }
 
     private int getStepSize(int currentRaw, int targetRaw, int distance) {
         if (targetRaw > currentRaw) {
