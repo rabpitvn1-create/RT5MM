@@ -2,35 +2,38 @@ package com.ericko.redmiscreenbrightness;
 
 /**
  * AOSP-inspired ambient-light state estimator for app-level brightness control.
- * It separates raw sensor observations from the accepted ambient state by using
- * timestamped fast/slow lux estimates, hysteresis, asymmetric debounce, and
- * guarded fast paths for sudden sunlight and sudden darkness.
+ * It separates raw observations from accepted ambient state with timestamped
+ * fast/slow lux, hysteresis, asymmetric debounce, and guarded fast paths.
  */
 public final class ProtectionAmbientController {
-    private static final long BUFFER_HORIZON_MS = 10000L;
-    private static final long FAST_HORIZON_MS = 1200L;
-    private static final long SLOW_HORIZON_MS = 6000L;
-    private static final long NORMAL_BRIGHTEN_DEBOUNCE_MS = 700L;
-    private static final long STRONG_BRIGHTEN_DEBOUNCE_MS = 250L;
-    private static final long NORMAL_DARKEN_DEBOUNCE_MS = 1400L;
-    private static final long STRONG_DARKEN_DEBOUNCE_MS = 700L;
-    private static final long DEEP_NIGHT_DEBOUNCE_MS = 5000L;
-    private static final long INITIAL_NORMAL_WARMUP_MS = 250L;
-    private static final long INITIAL_DEEP_NIGHT_WARMUP_MS = 3500L;
-    private static final long RESCUE_SAMPLE_WINDOW_MS = 900L;
-    private static final long RESCUE_COOLDOWN_MS = 1800L;
+    private static final long BUFFER_HORIZON_MS = 8000L;
+    private static final long FAST_HORIZON_MS = 700L;
+    private static final long SLOW_HORIZON_MS = 3200L;
 
-    private static final float SUNLIGHT_MIN_LUX = 800f;
-    private static final int SUNLIGHT_MIN_TARGET_RAW = 31;
-    private static final int SUNLIGHT_MIN_RAW_DELTA = 10;
-    private static final int SUNLIGHT_RESCUE_LOW_RAW = 25;
-    private static final int SUNLIGHT_RESCUE_MID_RAW = 31;
-    private static final int SUNLIGHT_RESCUE_HIGH_RAW = 34;
+    private static final long NORMAL_BRIGHTEN_DEBOUNCE_MS = 350L;
+    private static final long STRONG_BRIGHTEN_DEBOUNCE_MS = 100L;
+    private static final long FAST_ONLY_BRIGHTEN_DEBOUNCE_MS = 140L;
+    private static final long NORMAL_DARKEN_DEBOUNCE_MS = 650L;
+    private static final long STRONG_DARKEN_DEBOUNCE_MS = 220L;
+    private static final long FAST_ONLY_DARKEN_DEBOUNCE_MS = 260L;
+    private static final long DEEP_NIGHT_DEBOUNCE_MS = 3000L;
 
-    private static final float DARK_SETTLE_MAX_LUX = 12f;
-    private static final int DARK_SETTLE_MIN_RAW_DELTA = 8;
-    private static final int DARK_SETTLE_FLOOR_RAW = 7;
-    private static final int DARK_SETTLE_CEILING_RAW = 11;
+    private static final long INITIAL_NORMAL_WARMUP_MS = 120L;
+    private static final long INITIAL_DEEP_NIGHT_WARMUP_MS = 2200L;
+    private static final long FAST_EVIDENCE_WINDOW_MS = 700L;
+    private static final long INTERMEDIATE_COOLDOWN_MS = 900L;
+
+    private static final float SUNLIGHT_MIN_LUX = 500f;
+    private static final int SUNLIGHT_MIN_TARGET_RAW = 28;
+    private static final int SUNLIGHT_MIN_RAW_DELTA = 6;
+    private static final int SUNLIGHT_RESCUE_LOW_RAW = 31;
+    private static final int SUNLIGHT_RESCUE_MID_RAW = 37;
+    private static final int SUNLIGHT_RESCUE_HIGH_RAW = 43;
+
+    private static final float DARK_SETTLE_MAX_LUX = 25f;
+    private static final int DARK_SETTLE_MIN_RAW_DELTA = 5;
+    private static final int DARK_SETTLE_FLOOR_RAW = 8;
+    private static final int DARK_SETTLE_CEILING_RAW = 14;
 
     public enum Action {
         HOLD,
@@ -144,41 +147,76 @@ public final class ProtectionAmbientController {
             return result(Action.HOLD, "AMBIENT_WARMUP", -1, -1);
         }
 
-        boolean brightening = fastLux > brighteningThreshold && slowLux > brighteningThreshold;
-        boolean darkening = fastLux < darkeningThreshold && slowLux < darkeningThreshold;
+        boolean fastBright = fastLux > brighteningThreshold;
+        boolean slowBright = slowLux > brighteningThreshold;
+        boolean fastDark = fastLux < darkeningThreshold;
+        boolean slowDark = slowLux < darkeningThreshold;
 
-        if (brightening) {
+        if (fastBright) {
             darkeningCandidateSince = 0L;
             if (brighteningCandidateSince == 0L) {
                 brighteningCandidateSince = now;
             }
-            long required = isStrongBrightening() ? STRONG_BRIGHTEN_DEBOUNCE_MS : NORMAL_BRIGHTEN_DEBOUNCE_MS;
-            if (now - brighteningCandidateSince >= required) {
-                float accepted = Math.max(fastLux, slowLux);
-                setAmbientLux(accepted);
+
+            boolean fastOnlyConfirmed = isFastOnlyBrighteningConfirmed(now);
+            long required = slowBright
+                    ? (isStrongBrightening() ? STRONG_BRIGHTEN_DEBOUNCE_MS : NORMAL_BRIGHTEN_DEBOUNCE_MS)
+                    : FAST_ONLY_BRIGHTEN_DEBOUNCE_MS;
+
+            if ((slowBright || fastOnlyConfirmed)
+                    && now - brighteningCandidateSince >= required) {
+                setAmbientLux(blendLuxForBrightening());
                 brighteningCandidateSince = 0L;
-                return result(Action.AMBIENT_BRIGHTENED, "FAST_SLOW_BRIGHT_CONFIRMED", -1, -1);
+                return result(
+                        Action.AMBIENT_BRIGHTENED,
+                        slowBright ? "FAST_SLOW_BRIGHT_CONFIRMED" : "FAST_BRIGHT_PROVISIONAL_CONFIRMED",
+                        -1,
+                        -1);
             }
-            return result(Action.HOLD, "WAIT_BRIGHTEN_DEBOUNCE", -1, -1);
+            return result(
+                    Action.HOLD,
+                    slowBright ? "WAIT_BRIGHTEN_DEBOUNCE" : "WAIT_FAST_BRIGHT_EVIDENCE",
+                    -1,
+                    -1);
         }
 
-        if (darkening) {
+        if (fastDark) {
             brighteningCandidateSince = 0L;
             if (darkeningCandidateSince == 0L) {
                 darkeningCandidateSince = now;
             }
-            long required = getDarkeningDebounceMs();
-            if (now - darkeningCandidateSince >= required) {
-                float accepted = Math.min(fastLux, slowLux);
+
+            boolean deepNightCandidate = ProtectionCurveEngine.isDeepNightRaw(
+                    ProtectionCurveEngine.getTargetRaw(fastLux));
+            boolean fastOnlyConfirmed = !deepNightCandidate && isFastOnlyDarkeningConfirmed(now);
+            long required = slowDark
+                    ? getDarkeningDebounceMs()
+                    : FAST_ONLY_DARKEN_DEBOUNCE_MS;
+
+            if ((slowDark || fastOnlyConfirmed)
+                    && now - darkeningCandidateSince >= required) {
+                float accepted = blendLuxForDarkening();
+                if (ProtectionCurveEngine.isDeepNightRaw(ProtectionCurveEngine.getTargetRaw(accepted))
+                        && slowLux > 3f) {
+                    return result(Action.HOLD, "WAIT_DEEP_NIGHT_SLOW_CONFIRMATION", -1, -1);
+                }
                 setAmbientLux(accepted);
                 darkeningCandidateSince = 0L;
-                return result(Action.AMBIENT_DARKENED,
-                        accepted <= 3f ? "FAST_SLOW_DEEP_NIGHT_CONFIRMED" : "FAST_SLOW_DARK_CONFIRMED",
+                return result(
+                        Action.AMBIENT_DARKENED,
+                        accepted <= 3f
+                                ? "FAST_SLOW_DEEP_NIGHT_CONFIRMED"
+                                : (slowDark
+                                        ? "FAST_SLOW_DARK_CONFIRMED"
+                                        : "FAST_DARK_PROVISIONAL_CONFIRMED"),
                         -1,
                         -1);
             }
-            return result(Action.HOLD,
-                    slowLux <= 3f ? "WAIT_DEEP_NIGHT_DEBOUNCE" : "WAIT_DARKEN_DEBOUNCE",
+            return result(
+                    Action.HOLD,
+                    deepNightCandidate
+                            ? "WAIT_DEEP_NIGHT_DEBOUNCE"
+                            : (slowDark ? "WAIT_DARKEN_DEBOUNCE" : "WAIT_FAST_DARK_EVIDENCE"),
                     -1,
                     -1);
         }
@@ -230,22 +268,25 @@ public final class ProtectionAmbientController {
             return result(Action.HOLD, "WAIT_INITIAL_WARMUP", -1, -1);
         }
 
-        setAmbientLux(Math.max(0f, slowLux));
+        setAmbientLux(blendInitialLux());
         return result(Action.INITIALIZED, "AMBIENT_INITIALIZED", -1, -1);
     }
 
     private Result maybeCreateSunlightRescue(long now, int currentRaw) {
-        if (now - lastSunlightRescueAt < RESCUE_COOLDOWN_MS) {
+        if (now - lastSunlightRescueAt < INTERMEDIATE_COOLDOWN_MS) {
             return null;
         }
-        int latestTargetRaw = ProtectionCurveEngine.getTargetRaw(Math.max(fastLux, ringBuffer.getLatestLux()));
+        float recentHighLux = Math.max(fastLux, ringBuffer.getLatestLux());
+        int latestTargetRaw = ProtectionCurveEngine.getTargetRaw(recentHighLux);
         if (latestTargetRaw < SUNLIGHT_MIN_TARGET_RAW
                 || latestTargetRaw - currentRaw < SUNLIGHT_MIN_RAW_DELTA) {
             return null;
         }
 
-        float sampleThreshold = Math.max(SUNLIGHT_MIN_LUX, ambientValid ? ambientLux * 2f : SUNLIGHT_MIN_LUX);
-        if (ringBuffer.countRecentAtOrAbove(now, RESCUE_SAMPLE_WINDOW_MS, sampleThreshold) < 2) {
+        float sampleThreshold = Math.max(
+                SUNLIGHT_MIN_LUX,
+                ambientValid ? ambientLux * 1.5f : SUNLIGHT_MIN_LUX);
+        if (ringBuffer.countRecentAtOrAbove(now, FAST_EVIDENCE_WINDOW_MS, sampleThreshold) < 2) {
             return null;
         }
 
@@ -258,7 +299,7 @@ public final class ProtectionAmbientController {
     }
 
     private Result maybeCreateDarkSettle(long now, int currentRaw) {
-        if (now - lastDarkSettleAt < RESCUE_COOLDOWN_MS) {
+        if (now - lastDarkSettleAt < INTERMEDIATE_COOLDOWN_MS) {
             return null;
         }
         float recentLux = Math.min(fastLux, ringBuffer.getLatestLux());
@@ -268,11 +309,13 @@ public final class ProtectionAmbientController {
                 || currentRaw <= DARK_SETTLE_CEILING_RAW) {
             return null;
         }
-        if (ringBuffer.countRecentAtOrBelow(now, RESCUE_SAMPLE_WINDOW_MS, DARK_SETTLE_MAX_LUX) < 2) {
+        if (ringBuffer.countRecentAtOrBelow(now, FAST_EVIDENCE_WINDOW_MS, DARK_SETTLE_MAX_LUX) < 2) {
             return null;
         }
 
-        int settleRaw = Math.max(DARK_SETTLE_FLOOR_RAW, Math.min(DARK_SETTLE_CEILING_RAW, latestTargetRaw));
+        int settleRaw = Math.max(
+                DARK_SETTLE_FLOOR_RAW,
+                Math.min(DARK_SETTLE_CEILING_RAW, latestTargetRaw));
         if (settleRaw >= currentRaw) {
             return null;
         }
@@ -280,18 +323,52 @@ public final class ProtectionAmbientController {
         return result(Action.DARK_SETTLE, "DARK_FAST_SETTLE", settleRaw, latestTargetRaw);
     }
 
+    private boolean isFastOnlyBrighteningConfirmed(long now) {
+        if (ringBuffer.countRecentAtOrAbove(now, FAST_EVIDENCE_WINDOW_MS, brighteningThreshold) < 2) {
+            return false;
+        }
+        return fastLux >= ambientLux * 1.30f
+                && fastLux >= slowLux * 1.15f;
+    }
+
+    private boolean isFastOnlyDarkeningConfirmed(long now) {
+        if (ringBuffer.countRecentAtOrBelow(now, FAST_EVIDENCE_WINDOW_MS, darkeningThreshold) < 2) {
+            return false;
+        }
+        return fastLux <= ambientLux * 0.72f
+                && fastLux <= slowLux * 0.82f;
+    }
+
     private boolean isStrongBrightening() {
-        return fastLux >= Math.max(SUNLIGHT_MIN_LUX, ambientLux * 4f);
+        return fastLux >= Math.max(SUNLIGHT_MIN_LUX, ambientLux * 3f);
     }
 
     private long getDarkeningDebounceMs() {
         if (slowLux <= 3f) {
             return DEEP_NIGHT_DEBOUNCE_MS;
         }
-        if (ambientLux >= 40f && fastLux <= ambientLux * 0.25f) {
+        if (ambientLux >= 40f && fastLux <= ambientLux * 0.30f) {
             return STRONG_DARKEN_DEBOUNCE_MS;
         }
         return NORMAL_DARKEN_DEBOUNCE_MS;
+    }
+
+    private float blendInitialLux() {
+        return clampBetween(fastLux * 0.55f + slowLux * 0.45f, fastLux, slowLux);
+    }
+
+    private float blendLuxForBrightening() {
+        return clampBetween(fastLux * 0.72f + slowLux * 0.28f, fastLux, slowLux);
+    }
+
+    private float blendLuxForDarkening() {
+        return clampBetween(fastLux * 0.68f + slowLux * 0.32f, fastLux, slowLux);
+    }
+
+    private float clampBetween(float value, float a, float b) {
+        float low = Math.min(a, b);
+        float high = Math.max(a, b);
+        return Math.max(low, Math.min(high, value));
     }
 
     private int getSunlightRescueRaw(int currentRaw, int targetRaw) {
@@ -320,29 +397,31 @@ public final class ProtectionAmbientController {
         float darkAbsolute;
 
         if (ambientLux <= 6f) {
-            brightRatio = 0.50f;
-            darkRatio = 0.30f;
-            brightAbsolute = 1f;
-            darkAbsolute = 0.5f;
+            brightRatio = 0.40f;
+            darkRatio = 0.25f;
+            brightAbsolute = 0.7f;
+            darkAbsolute = 0.3f;
         } else if (ambientLux <= 350f) {
-            brightRatio = 0.50f;
-            darkRatio = 0.40f;
-            brightAbsolute = 15f;
-            darkAbsolute = 10f;
+            brightRatio = 0.32f;
+            darkRatio = 0.28f;
+            brightAbsolute = 10f;
+            darkAbsolute = 8f;
         } else if (ambientLux <= 1800f) {
-            brightRatio = 0.30f;
-            darkRatio = 0.35f;
-            brightAbsolute = 75f;
-            darkAbsolute = 50f;
+            brightRatio = 0.22f;
+            darkRatio = 0.28f;
+            brightAbsolute = 50f;
+            darkAbsolute = 40f;
         } else {
-            brightRatio = 0.20f;
-            darkRatio = 0.40f;
-            brightAbsolute = 250f;
-            darkAbsolute = 200f;
+            brightRatio = 0.15f;
+            darkRatio = 0.32f;
+            brightAbsolute = 180f;
+            darkAbsolute = 150f;
         }
 
         brighteningThreshold = ambientLux + Math.max(brightAbsolute, ambientLux * brightRatio);
-        darkeningThreshold = Math.max(0f, ambientLux - Math.max(darkAbsolute, ambientLux * darkRatio));
+        darkeningThreshold = Math.max(
+                0f,
+                ambientLux - Math.max(darkAbsolute, ambientLux * darkRatio));
     }
 
     private Result result(Action action, String reason, int intermediateRaw, int finalTargetRaw) {
