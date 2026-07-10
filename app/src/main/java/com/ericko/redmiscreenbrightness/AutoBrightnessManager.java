@@ -249,8 +249,13 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     private void handleDecision(BrightnessDecisionEngine.Decision decision, String event, float lux, int currentRaw, long now) {
-        boolean forcePersist = decision.shouldApply() || decision.isNoop() || shouldForceApply(event);
+        boolean forcePersist = decision.shouldApply() || decision.shouldRescue() || decision.isNoop() || shouldForceApply(event);
         persistDecisionIfNeeded(decision, now, forcePersist);
+
+        if (decision.shouldRescue()) {
+            applySunlightRescue(decision, event, lux, currentRaw);
+            return;
+        }
 
         if (decision.shouldApply()) {
             applyConfirmedTarget(decision.targetRaw, event, lux, currentRaw, decision.reason, decision.confidence);
@@ -276,6 +281,19 @@ public class AutoBrightnessManager implements SensorEventListener {
         BrightnessLogManager.logSnapshotIfChanged(appContext, decision.reason + "_RAW_" + decision.targetRaw, lux);
     }
 
+    private void applySunlightRescue(BrightnessDecisionEngine.Decision decision, String event, float lux, int currentRaw) {
+        if (decision.rescueRaw <= currentRaw) {
+            ProtectionBatteryStats.recordBrightnessWriteSkip(appContext);
+            BrightnessLogManager.logSnapshotIfChanged(appContext, "SUNLIGHT_RESCUE_SKIP_RAW_" + currentRaw + "_TO_" + decision.rescueRaw, lux);
+            return;
+        }
+        saveLastDecision(appContext, System.currentTimeMillis(), "SUNLIGHT_RESCUE", decision.reason, decision.targetRaw, 0L, decision.confidence);
+        saveMode(appContext, Mode.PROTECTING);
+        beginAppWriteGrace(appContext);
+        saveLastAutoRaw(appContext, decision.rescueRaw);
+        transitionEngine.recoverToReadableRaw(decision.rescueRaw, decision.targetRaw, event == null ? "SUNLIGHT_RESCUE" : event + "_" + decision.reason);
+    }
+
     private void applyConfirmedTarget(int targetRaw, String event, float lux, int currentRaw, String reason, float confidence) {
         int targetPercent = ProtectionCurveEngine.nearestProtectionPercentForRaw(targetRaw);
         saveLastDecision(appContext, System.currentTimeMillis(), "APPLY", reason, targetRaw, 0L, confidence);
@@ -296,7 +314,7 @@ public class AutoBrightnessManager implements SensorEventListener {
     }
 
     private void persistDecisionIfNeeded(BrightnessDecisionEngine.Decision decision, long now, boolean force) {
-        String signature = decision.action.name() + "|" + decision.reason + "|" + decision.targetRaw;
+        String signature = decision.action.name() + "|" + decision.reason + "|" + decision.targetRaw + "|" + decision.rescueRaw;
         if (!force && signature.equals(lastDecisionSignature) && now - lastDecisionPersistAt < DECISION_PERSIST_THROTTLE_MS) {
             return;
         }
