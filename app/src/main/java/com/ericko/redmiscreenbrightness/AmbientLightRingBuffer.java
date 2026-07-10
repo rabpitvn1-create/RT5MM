@@ -8,6 +8,9 @@ package com.ericko.redmiscreenbrightness;
 public final class AmbientLightRingBuffer {
     private static final int INITIAL_CAPACITY = 32;
     private static final int MAX_CAPACITY = 256;
+    private static final long DEFAULT_LATEST_SAMPLE_WEIGHT_MS = 120L;
+    private static final long MIN_LATEST_SAMPLE_WEIGHT_MS = 60L;
+    private static final long MAX_LATEST_SAMPLE_WEIGHT_MS = 400L;
 
     private long[] times = new long[INITIAL_CAPACITY];
     private float[] luxValues = new float[INITIAL_CAPACITY];
@@ -75,8 +78,9 @@ public final class AmbientLightRingBuffer {
     }
 
     /**
-     * Returns a duration-weighted average with a small recency preference.
-     * Recent samples receive up to three times the weight of the horizon edge.
+     * Returns a duration-weighted average with a controlled recency preference.
+     * The latest callback receives a small synthetic duration so it affects the
+     * estimate immediately instead of waiting for the next sensor event.
      */
     public float calculateWeightedLux(long nowMs, long horizonMs) {
         if (count <= 0) {
@@ -97,18 +101,30 @@ public final class AmbientLightRingBuffer {
                 continue;
             }
 
-            double midpoint = segmentStart + (segmentEnd - segmentStart) * 0.5d;
-            double normalizedRecency = (midpoint - cutoff) / Math.max(1d, horizonMs);
-            normalizedRecency = Math.max(0d, Math.min(1d, normalizedRecency));
-            double recencyWeight = 1d + 2d * normalizedRecency;
-            double segmentWeight = (segmentEnd - segmentStart) * recencyWeight;
-
+            double segmentWeight = calculateSegmentWeight(segmentStart, segmentEnd, cutoff, horizonMs);
             weightedLux += luxValues[i] * segmentWeight;
             totalWeight += segmentWeight;
         }
 
+        int latestIndex = count - 1;
+        long desiredLatestDuration = estimateLatestSampleWeightMs();
+        long existingLatestDuration = Math.max(
+                0L,
+                nowMs - Math.max(cutoff, times[latestIndex]));
+        long extraLatestDuration = Math.max(0L, desiredLatestDuration - existingLatestDuration);
+        if (extraLatestDuration > 0L) {
+            long syntheticStart = Math.max(cutoff, nowMs - extraLatestDuration);
+            double syntheticWeight = calculateSegmentWeight(
+                    syntheticStart,
+                    nowMs,
+                    cutoff,
+                    horizonMs);
+            weightedLux += luxValues[latestIndex] * syntheticWeight;
+            totalWeight += syntheticWeight;
+        }
+
         if (totalWeight <= 0d) {
-            return luxValues[count - 1];
+            return luxValues[latestIndex];
         }
         return (float) (weightedLux / totalWeight);
     }
@@ -147,6 +163,31 @@ public final class AmbientLightRingBuffer {
             }
         }
         return matches;
+    }
+
+    private double calculateSegmentWeight(
+            long segmentStart,
+            long segmentEnd,
+            long cutoff,
+            long horizonMs) {
+        double midpoint = segmentStart + (segmentEnd - segmentStart) * 0.5d;
+        double normalizedRecency = (midpoint - cutoff) / Math.max(1d, horizonMs);
+        normalizedRecency = Math.max(0d, Math.min(1d, normalizedRecency));
+        double recencyWeight = 1d + 3d * normalizedRecency * normalizedRecency;
+        return (segmentEnd - segmentStart) * recencyWeight;
+    }
+
+    private long estimateLatestSampleWeightMs() {
+        if (count < 2) {
+            return DEFAULT_LATEST_SAMPLE_WEIGHT_MS;
+        }
+        long interval = times[count - 1] - times[count - 2];
+        if (interval <= 0L) {
+            return DEFAULT_LATEST_SAMPLE_WEIGHT_MS;
+        }
+        return Math.max(
+                MIN_LATEST_SAMPLE_WEIGHT_MS,
+                Math.min(MAX_LATEST_SAMPLE_WEIGHT_MS, interval));
     }
 
     private void ensureCapacity(int requiredCapacity) {
