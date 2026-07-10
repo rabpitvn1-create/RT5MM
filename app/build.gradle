@@ -10,62 +10,10 @@ android {
         applicationId 'com.ericko.redmiscreenbrightness'
         minSdk 24
         targetSdk 35
-        versionCode 41
-        versionName '1.0.41'
+        versionCode 42
+        versionName '1.0.42'
         manifestPlaceholders = [settingsPermission: 'android.permission.WRITE_' + 'SETTINGS']
     }
-
-    sourceSets {
-        main {
-            res.srcDir("$buildDir/generated/iconRes")
-        }
-    }
-}
-
-def launcherIconParts = fileTree('src/main/icon-src-v2') {
-    include 'original_launcher.webp.b64.part*'
-}
-def generatedLauncherIcon = file("$buildDir/generated/iconRes/mipmap-nodpi/ic_launcher_original.webp")
-
-tasks.register('generateLauncherIcon') {
-    inputs.files(launcherIconParts)
-    outputs.file(generatedLauncherIcon)
-
-    doLast {
-        def parts = launcherIconParts.files.sort { a, b -> a.name <=> b.name }
-        if (parts.size() != 3) {
-            throw new GradleException("Expected 3 launcher icon parts, found ${parts.size()}")
-        }
-
-        def encoded = parts.collect { it.getText('UTF-8').trim() }.join('')
-        byte[] decoded = java.util.Base64.getDecoder().decode(encoded)
-
-        if (decoded.length != 33240) {
-            throw new GradleException("Launcher icon size mismatch: ${decoded.length}")
-        }
-        if (decoded[0] != (byte) 'R' || decoded[1] != (byte) 'I'
-                || decoded[2] != (byte) 'F' || decoded[3] != (byte) 'F'
-                || decoded[8] != (byte) 'W' || decoded[9] != (byte) 'E'
-                || decoded[10] != (byte) 'B' || decoded[11] != (byte) 'P') {
-            throw new GradleException("Launcher icon is not a valid WebP container")
-        }
-
-        def digest = java.security.MessageDigest.getInstance('SHA-256')
-                .digest(decoded)
-                .collect { String.format('%02x', it & 0xff) }
-                .join('')
-        def expected = '115c3d4c6542a88e8ea73af15d78d98e3df3b4b0c0b46890d89ce5f801c149fe'
-        if (digest != expected) {
-            throw new GradleException("Launcher icon checksum mismatch: ${digest}")
-        }
-
-        generatedLauncherIcon.parentFile.mkdirs()
-        generatedLauncherIcon.bytes = decoded
-    }
-}
-
-tasks.named('preBuild').configure {
-    dependsOn('generateLauncherIcon')
 }
 
 dependencies {
