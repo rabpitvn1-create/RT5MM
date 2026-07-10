@@ -36,6 +36,28 @@ public final class ProtectionTransitionEngine {
         return targetRaw;
     }
 
+    public void recoverToReadableRaw(int requestedRescueRaw, int requestedFinalTargetRaw, String reason) {
+        int safeRescue = ProtectionCurveEngine.clampRaw(requestedRescueRaw);
+        int safeFinalTarget = ProtectionCurveEngine.clampRaw(requestedFinalTargetRaw);
+        int currentRaw = BrightnessLevels.getSystemRaw(appContext, safeRescue);
+        if (safeRescue <= currentRaw) {
+            BrightnessLogManager.logSnapshotIfChanged(appContext, "SUNLIGHT_RESCUE_SKIPPED_RAW_" + currentRaw + "_TO_" + safeRescue + "_FINAL_" + safeFinalTarget + "_" + safe(reason), AutoBrightnessManager.getLastLux(appContext));
+            return;
+        }
+
+        running = false;
+        targetRaw = safeRescue;
+        handler.removeCallbacks(stepRunnable);
+        BrightnessLevels.markAppBrightnessWriteGrace(appContext);
+        boolean ok = BrightnessLevels.applyProtectedRaw(appContext, safeRescue);
+        if (ok) {
+            ProtectionBatteryStats.recordBrightnessWrite(appContext);
+            BrightnessLogManager.appendSnapshot(appContext, "SUNLIGHT_RESCUE_RAW_" + currentRaw + "_TO_" + safeRescue + "_FINAL_" + safeFinalTarget + "_" + safe(reason), AutoBrightnessManager.getLastLux(appContext));
+        } else {
+            BrightnessLogManager.appendSnapshot(appContext, "SUNLIGHT_RESCUE_WRITE_FAILED_RAW_" + safeRescue + "_" + safe(reason), AutoBrightnessManager.getLastLux(appContext));
+        }
+    }
+
     public void transitionToRaw(int requestedTargetRaw, String reason) {
         int safeTarget = ProtectionCurveEngine.clampRaw(requestedTargetRaw);
         int currentRaw = BrightnessLevels.getSystemRaw(appContext, safeTarget);
