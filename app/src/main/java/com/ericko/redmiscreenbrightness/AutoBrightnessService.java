@@ -30,7 +30,6 @@ public final class AutoBrightnessService extends Service {
             "com.ericko.redmiscreenbrightness.PROTECTION_REFRESH";
 
     private static final String CHANNEL_ID = "screen_protection_channel";
-    private static final String CHANNEL_NAME = "Screen Protection";
     private static final int NOTIFICATION_ID = 3001;
     private static final long NOTIFICATION_REFRESH_MS = 15L * 60L * 1000L;
     private static final long HEALTH_UPDATE_MS = 5L * 60L * 1000L;
@@ -68,8 +67,6 @@ public final class AutoBrightnessService extends Service {
             }
 
             if (Intent.ACTION_USER_PRESENT.equals(action)) {
-                // SCREEN_ON and USER_PRESENT normally arrive back-to-back. Do not reset
-                // fresh ambient history twice; USER_PRESENT is only a fallback wake signal.
                 wakeControllerIfSleeping("PROTECTION_USER_PRESENT");
                 updateNotification(true);
             }
@@ -164,6 +161,7 @@ public final class AutoBrightnessService extends Service {
         }
 
         if (ACTION_REFRESH.equals(action)) {
+            createNotificationChannel();
             ProtectionServiceHealth.markHeartbeat(this, "PROTECTION_REFRESH_REQUEST");
             updateNotification(true);
         }
@@ -258,25 +256,35 @@ public final class AutoBrightnessService extends Service {
         long holdMs = AutoBrightnessManager.getUserHoldRemainingMs(this);
         int raw = BrightnessLevels.getSystemRaw(this, -1);
         int percent = raw < 0 ? -1 : BrightnessLevels.getPercentForRaw(raw);
+        String modeName = AppLanguage.modeName(this, mode);
+        String powerName = AppLanguage.powerStateName(this, powerState);
 
         String contentText;
         String bigText;
         if (powerState == ProtectionPowerState.SCREEN_OFF_SLEEP) {
-            contentText = "Sleeping · light sensor paused";
-            bigText = "Screen Protection is sleeping to save battery"
-                    + "\nLight sensor: paused until the screen turns on"
-                    + "\nLast environment: " + formatLux(lux)
-                    + "\nMode: " + AutoBrightnessManager.getDisplayMode(mode);
+            contentText = AppLanguage.get(this, R.string.notification_sleeping_short);
+            bigText = AppLanguage.get(this, R.string.notification_sleeping_title)
+                    + "\n" + AppLanguage.get(this, R.string.notification_sensor_paused)
+                    + "\n" + AppLanguage.get(
+                            this, R.string.notification_last_environment, formatLux(lux))
+                    + "\n" + AppLanguage.get(this, R.string.notification_mode, modeName);
         } else {
             contentText = formatLux(lux)
                     + (raw >= 0 ? " · Raw " + raw : "")
-                    + " · " + readablePowerState(powerState);
-            bigText = "Screen Protection is active"
-                    + "\nEnvironment: " + formatLux(lux)
-                    + (percent >= 0 ? "\nBrightness: " + percent + "% · raw " + raw : "")
-                    + "\nMode: " + AutoBrightnessManager.getDisplayMode(mode)
-                    + "\nPower: " + readablePowerState(powerState)
-                    + (holdMs > 0L ? "\nManual hold: " + (holdMs / 1000L) + "s" : "");
+                    + " · " + powerName;
+            bigText = AppLanguage.get(this, R.string.notification_active_title)
+                    + "\n" + AppLanguage.get(
+                            this, R.string.notification_environment, formatLux(lux))
+                    + (percent >= 0
+                    ? "\n" + AppLanguage.get(
+                            this, R.string.notification_brightness, percent, raw)
+                    : "")
+                    + "\n" + AppLanguage.get(this, R.string.notification_mode, modeName)
+                    + "\n" + AppLanguage.get(this, R.string.notification_power, powerName)
+                    + (holdMs > 0L
+                    ? "\n" + AppLanguage.get(
+                            this, R.string.notification_manual_hold, holdMs / 1000L)
+                    : "");
         }
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
@@ -284,7 +292,7 @@ public final class AutoBrightnessService extends Service {
                 : new Notification.Builder(this);
         return builder
                 .setSmallIcon(iconForPercent(percent))
-                .setContentTitle("Screen Protection")
+                .setContentTitle(AppLanguage.get(this, R.string.notification_title))
                 .setContentText(contentText)
                 .setStyle(new Notification.BigTextStyle().bigText(bigText))
                 .setContentIntent(pendingIntent)
@@ -303,7 +311,9 @@ public final class AutoBrightnessService extends Service {
                 ? -1 : BrightnessLevels.getSystemRaw(this, -1);
         long holdBucket = AutoBrightnessManager.getUserHoldRemainingMs(this) / 60_000L;
         long luxBucket = Math.round(AutoBrightnessManager.getLastLux(this));
-        return mode.name() + '|' + power.name() + '|' + raw + '|' + luxBucket + '|' + holdBucket;
+        return AppLanguage.languageCode(this)
+                + '|' + mode.name() + '|' + power.name() + '|' + raw
+                + '|' + luxBucket + '|' + holdBucket;
     }
 
     private int iconForPercent(int percent) {
@@ -441,8 +451,11 @@ public final class AutoBrightnessService extends Service {
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("Keeps Screen Protection active while enabled.");
+                CHANNEL_ID,
+                AppLanguage.get(this, R.string.notification_channel_name),
+                NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription(
+                AppLanguage.get(this, R.string.notification_channel_description));
         channel.setShowBadge(false);
         NotificationManager notifications =
                 (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
@@ -459,12 +472,10 @@ public final class AutoBrightnessService extends Service {
     }
 
     private String formatLux(float lux) {
-        if (Float.isNaN(lux) || Float.isInfinite(lux) || lux < 0f) return "Learning environment";
-        return String.format(Locale.US, "%.1f lx", lux);
-    }
-
-    private String readablePowerState(ProtectionPowerState state) {
-        return state.name().toLowerCase(Locale.US).replace('_', ' ');
+        if (Float.isNaN(lux) || Float.isInfinite(lux) || lux < 0f) {
+            return AppLanguage.get(this, R.string.notification_learning_environment);
+        }
+        return String.format(new Locale(AppLanguage.languageCode(this)), "%.1f lx", lux);
     }
 
     public static void start(Context context) {
