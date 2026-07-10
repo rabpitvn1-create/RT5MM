@@ -50,6 +50,48 @@ public final class AppLanguage {
         return VIETNAMESE.equals(Locale.getDefault().getLanguage()) ? VIETNAMESE : ENGLISH;
     }
 
+    public static String profileName(Context context, float lux) {
+        if (Float.isNaN(lux) || Float.isInfinite(lux) || lux < 0f) {
+            return isVietnamese(context) ? "không xác định" : "unknown";
+        }
+        if (!isVietnamese(context)) return ProtectionCurveEngine.getProfileName(lux);
+        if (lux <= 3f) return "đêm rất tối";
+        if (lux <= 25f) return "rất thiếu sáng";
+        if (lux <= 150f) return "trong nhà hơi tối";
+        if (lux <= 800f) return "trong nhà";
+        if (lux <= 2600f) return "trong nhà sáng";
+        return "ngoài trời";
+    }
+
+    public static String modeName(Context context, AutoBrightnessManager.Mode mode) {
+        if (mode == AutoBrightnessManager.Mode.PROTECTING) {
+            return get(context, R.string.mode_protecting);
+        }
+        if (mode == AutoBrightnessManager.Mode.USER_HOLD) {
+            return get(context, R.string.mode_holding);
+        }
+        if (mode == AutoBrightnessManager.Mode.UNAVAILABLE) {
+            return get(context, R.string.mode_unavailable);
+        }
+        return get(context, R.string.mode_off);
+    }
+
+    public static String powerStateName(Context context, ProtectionPowerState state) {
+        if (state == ProtectionPowerState.SCREEN_OFF_SLEEP) {
+            return get(context, R.string.power_screen_off_sleep);
+        }
+        if (state == ProtectionPowerState.USER_HOLD_LOW_POWER) {
+            return get(context, R.string.power_user_hold_low);
+        }
+        if (state == ProtectionPowerState.RECOVERY_WAKE) {
+            return get(context, R.string.power_recovery_wake);
+        }
+        if (state == ProtectionPowerState.ACTIVE_SCREEN_ON) {
+            return get(context, R.string.power_active_screen_on);
+        }
+        return get(context, R.string.power_off);
+    }
+
     private static Locale locale(Context context) {
         String code = languageCode(context);
         Locale locale = new Locale(code);
