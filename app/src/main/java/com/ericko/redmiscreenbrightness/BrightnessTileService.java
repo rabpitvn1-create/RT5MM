@@ -31,7 +31,10 @@ public final class BrightnessTileService extends TileService {
             AutoBrightnessService.stop(this);
             BrightnessLogManager.appendSnapshot(
                     this, "TILE_PROTECTION_DISABLED", AutoBrightnessManager.getLastLux(this));
-            Toast.makeText(this, "Screen Protection off", Toast.LENGTH_SHORT).show();
+            Toast.makeText(
+                    this,
+                    AppLanguage.get(this, R.string.toast_protection_off),
+                    Toast.LENGTH_SHORT).show();
             updateTileView();
             return;
         }
@@ -39,7 +42,10 @@ public final class BrightnessTileService extends TileService {
         if (!Settings.System.canWrite(this)) {
             BrightnessLogManager.appendSnapshot(
                     this, "TILE_WRITE_SETTINGS_MISSING", AutoBrightnessManager.getLastLux(this));
-            Toast.makeText(this, "Open the app to allow brightness control", Toast.LENGTH_LONG).show();
+            Toast.makeText(
+                    this,
+                    AppLanguage.get(this, R.string.toast_open_app_permission),
+                    Toast.LENGTH_LONG).show();
             updateTileView();
             return;
         }
@@ -48,7 +54,10 @@ public final class BrightnessTileService extends TileService {
             AutoBrightnessManager.markUnavailable(this);
             BrightnessLogManager.appendSnapshot(
                     this, "TILE_PROTECTION_UNAVAILABLE", AutoBrightnessManager.getLastLux(this));
-            Toast.makeText(this, "Light sensor unavailable", Toast.LENGTH_SHORT).show();
+            Toast.makeText(
+                    this,
+                    AppLanguage.get(this, R.string.toast_sensor_unavailable),
+                    Toast.LENGTH_SHORT).show();
             updateTileView();
             return;
         }
@@ -56,7 +65,10 @@ public final class BrightnessTileService extends TileService {
         AutoBrightnessService.start(this);
         BrightnessLogManager.appendSnapshot(
                 this, "TILE_PROTECTION_ENABLED", AutoBrightnessManager.getLastLux(this));
-        Toast.makeText(this, "Screen Protection on", Toast.LENGTH_SHORT).show();
+        Toast.makeText(
+                this,
+                AppLanguage.get(this, R.string.toast_protection_on),
+                Toast.LENGTH_SHORT).show();
         updateTileView();
     }
 
@@ -75,14 +87,14 @@ public final class BrightnessTileService extends TileService {
         boolean enabled = AutoBrightnessManager.isAutoEnabled(this);
         int percent = BrightnessLevels.getCurrentPercent(this);
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
-        tile.setLabel("Screen Protection");
+        tile.setLabel(AppLanguage.get(this, R.string.tile_label));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (!enabled) {
-                tile.setSubtitle("Tap to protect");
+                tile.setSubtitle(AppLanguage.get(this, R.string.tile_tap_to_protect));
             } else if (mode == AutoBrightnessManager.Mode.USER_HOLD) {
-                tile.setSubtitle("Holding · " + percent + "%");
+                tile.setSubtitle(AppLanguage.get(this, R.string.tile_holding, percent));
             } else {
-                tile.setSubtitle("Protected · " + percent + "%");
+                tile.setSubtitle(AppLanguage.get(this, R.string.tile_protected, percent));
             }
         }
         tile.setIcon(Icon.createWithResource(this, getIconForPercent(percent)));
