@@ -27,6 +27,9 @@ jobs:
           curl -L -o gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
           unzip -q gradle.zip
 
+      - name: Run unit tests
+        run: ./gradle-8.7/bin/gradle --no-daemon :app:testDebugUnitTest --stacktrace
+
       - name: Build debug APK
         run: ./gradle-8.7/bin/gradle --no-daemon :app:assembleDebug --stacktrace
 
