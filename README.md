@@ -2,144 +2,139 @@
 
 A personal one-button Android screen protection app for Redmi / HyperOS.
 
-The app is not meant to be a general brightness controller. Its job is to keep the screen inside conservative brightness levels, run quietly in the foreground when enabled, respect manual brightness changes, save battery where possible, and restore protection after reboot when possible.
+The app is not intended to replace every part of Android's display stack. Its job is to keep the screen inside conservative brightness levels, react quickly when readability or eye comfort is at risk, respect manual brightness changes, and remain stable in ordinary indoor lighting.
 
 ## Latest APK update
 
-- Version: 1.0.33
+- Version: 1.0.34
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
-- Release note: adds Sunlight Fast Recovery so sudden strong upward light changes can quickly move to a readable rescue raw before final confirmation.
+- Release note: replaces sample-to-raw decision logic with an AOSP-inspired ambient-light controller using a timestamped ring buffer, fast and slow lux, hysteresis, asymmetric debounce, sunlight recovery, and dark fast settle.
 
 ## Product direction
 
-Main screen philosophy:
-
 - One primary button: turn protection on or off.
-- Short status text: ready, protecting, holding user brightness, blocked, or limited.
-- Permission and HyperOS setup are support flows, not the main interface.
+- Permission and HyperOS setup remain support flows, not the main interface.
+- The system auto-brightness mode is disabled while protection owns brightness and restored when protection stops.
+- Manual brightness changes enter user hold instead of being immediately overwritten.
+- The light sensor runs only while the screen is on.
 
-Internal behavior:
+## AOSP-inspired control architecture
 
-- Uses the ambient light sensor while the screen is on.
-- Suspends sensor work when the screen is off while keeping protection enabled.
-- Turns the system auto-brightness mode off while protection is enabled, then restores the previous system mode when protection is stopped.
-- Keeps brightness inside conservative protection buckets.
-- Uses a foreground service while protection is enabled.
-- Restores protection after boot or app update if it was enabled.
-- Treats manual brightness changes as a user hold instead of immediately fighting the user.
+Version 1.0.34 separates the brightness pipeline into distinct layers:
 
-## System brightness handoff
+```text
+Sensor samples
+→ AmbientLightRingBuffer
+→ ProtectionAmbientController
+→ ProtectionCurveEngine
+→ BrightnessDecisionEngine
+→ ProtectionTransitionEngine
+→ Android system brightness
+```
 
-Screen Protection now takes exclusive control more cleanly:
+The important rule is:
 
-- When protection starts, the app captures the previous system brightness mode.
-- It immediately switches Android/HyperOS brightness mode to `MANUAL` so the system auto-brightness controller does not run in parallel.
-- While protection is running, screen wake and service refresh paths force `MANUAL` again in case another feature re-enabled auto brightness.
-- When protection stops, the app restores the captured previous mode. If the system was using auto brightness before protection started, it is restored to auto; if it was already manual, it stays manual.
+```text
+Sensor lux is not ambient state.
+Ambient state is not a brightness write.
+```
 
-## Brightness Brain v3 active path
+### `AmbientLightRingBuffer`
 
-This version connects the Brightness Brain foundation into the active manager path:
+The app now stores timestamped `(time, lux)` observations in RAM instead of relying on a fixed number of samples.
 
-- `ProtectionCurveEngine` supplies the active lux-to-raw target.
-- `AutoBrightnessManager` no longer jumps directly to bucket brightness during normal protection decisions.
-- The manager writes a protected raw target and lets `ProtectionTransitionEngine` move toward it smoothly.
-- Transition is cancelled on screen-off sleep, service stop, force recovery, noisy sensor decisions, spike rejection, and confirmed user brightness hold.
-- The raw target is saved as the last app-driven raw value so the brightness observer can distinguish app writes from real user changes.
-- User hold is shortened for personal-mode behavior: normal hold is about 15 minutes; night hold is about 8 minutes.
+- Old samples are pruned by time horizon.
+- One boundary sample is retained during pruning so weighted averages remain continuous.
+- Fast and slow lux are calculated using duration weighting with a controlled recency preference.
+- SharedPreferences is not used as a sensor hot-path buffer.
 
-## Deep Night Floor
+### `ProtectionAmbientController`
 
-Real-world tuning showed that raw 7 can still feel bright at 0 lux. The active raw curve now supports a lower confirmed deep-night floor:
+The ambient controller owns environmental state estimation.
 
-- 0 to 0.5 lx -> raw 4
-- 0.5 to 1.5 lx -> raw 5
-- 1.5 to 3 lx -> raw 6
-- 3 to 6 lx -> raw 7
+- Fast horizon: approximately 1.2 seconds.
+- Slow horizon: approximately 6 seconds.
+- Buffer horizon: approximately 10 seconds.
+- Brightening and darkening use separate debounce timing.
+- Deep-night entry uses the longest confirmation.
+- Accepted ambient lux becomes an anchor with brightening and darkening thresholds around it.
 
-This does not mean every sudden 0 lux reading immediately forces raw 4. Deep-night targets go through the decision gate:
+The controller emits:
 
-- They need a rolling-window confirmation.
-- They require stronger sample agreement than normal changes.
-- They use a slower confirmation time than ordinary dimming.
-- Force-refresh paths do not bypass the deep-night confirmation guard.
+- `HOLD`: remain inside the current ambient hysteresis band.
+- `INITIALIZED`: a valid ambient anchor has been established.
+- `AMBIENT_BRIGHTENED`: fast and slow lux confirm a brighter environment.
+- `AMBIENT_DARKENED`: fast and slow lux confirm a darker environment.
+- `SUNLIGHT_RESCUE`: move immediately to a capped readable raw while final ambient confirmation continues.
+- `DARK_SETTLE`: move immediately to a safe dim intermediate raw while deep-night confirmation continues.
 
-This is meant to handle true dark-room use without letting a hand-covered sensor or short lux drop instantly make the screen too dark.
+## Indoor stability
+
+The app no longer tries to follow every indoor lux fluctuation.
+
+Indoor anchors use a deliberately wide hysteresis band. When fast and slow lux remain between the darkening and brightening thresholds:
+
+```text
+ambient anchor stays unchanged
+→ target raw stays unchanged
+→ brightness write count stays at zero
+```
+
+This replaces the earlier idea of pausing the light sensor. The app keeps observing while avoiding unnecessary writes.
 
 ## Sunlight Fast Recovery
 
-Real-world testing showed that moving suddenly from a dark or indoor area into direct sun can make the screen feel unreadable for a few seconds if every upward change waits for the full decision window.
+Sudden movement into strong light has an upward-only fast path.
 
-The app now has a fast upward-only rescue path:
+Requirements include:
 
-- It only runs for strong upward changes.
-- It does not run during user hold.
-- It requires recent upward agreement instead of a single lux spike.
-- It does not jump to the final target or max brightness.
-- It writes a readable intermediate rescue raw, then lets the normal decision gate confirm the final target.
+- at least two recent high-light observations;
+- a large target-raw increase;
+- a high outdoor target region;
+- no active user hold.
 
-Rescue targets are intentionally capped:
+The rescue write is intentionally capped rather than jumping directly to maximum:
 
-- If current raw is below 16, rescue is capped at raw 24.
-- If current raw is 16 to 23, rescue is capped at raw 31.
-- If current raw is already 24 or higher, the normal transition path is used.
+- very low current raw can rescue to raw 25;
+- low-mid current raw can rescue to raw 31;
+- mid current raw can rescue to raw 34;
+- final target still requires accepted ambient confirmation.
 
-This keeps outdoor readability responsive without turning every brief glare spike into a full-brightness jump.
+## Dark Fast Settle and Deep Night Guard
+
+A sudden move into darkness can immediately settle to a safe intermediate range of raw 7–11 when multiple recent low-light observations agree.
+
+This is separate from final deep-night entry:
+
+- raw 7–11 can provide quick eye comfort;
+- raw 4–6 still requires slow-lux confirmation and a longer debounce;
+- a short sensor cover is not allowed to force raw 4 immediately.
 
 ## Brightness Decision Gate
 
-The app no longer treats every lux change as a reason to change brightness. The core question is now:
+`BrightnessDecisionEngine` is now a final screen-raw gate rather than an environmental estimator.
 
-`Is there enough evidence to change protected raw brightness?`
+It receives only accepted ambient states and decides:
 
-`BrightnessDecisionEngine` keeps a short rolling window of lux-derived raw targets and decides between:
+- `NOOP`: the target remains inside screen raw hysteresis;
+- `WAIT`: a forced stale deep-night value must wait for fresh ambient confirmation;
+- `APPLY`: the accepted ambient state maps to a meaningful new target raw.
 
-- `NOOP`: current raw already matches the stable target.
-- `WAIT`: more evidence is needed.
-- `IGNORE_SPIKE`: the latest lux jump looks like a short spike.
-- `SENSOR_NOISY`: samples are too inconsistent to trust.
-- `SUNLIGHT_RESCUE`: upward light change is strong enough to move to a readable intermediate raw.
-- `APPLY`: the target raw is confirmed and can be transitioned.
+This removes duplicated filtering between ambient estimation and raw decisions.
 
-Important behavior:
+## Deep-night raw curve
 
-- Decisions are based on target raw, not lux alone.
-- A one-sample spike is not allowed to write final brightness.
-- Small raw changes need stronger confirmation than large upward changes.
-- Downward changes are confirmed more slowly than upward changes.
-- Deep-night downward changes are confirmed slowest.
-- Same-target maintenance is throttled so the app does not keep refreshing its own last-write timestamp and accidentally hide real user adjustments.
+- 0 to 0.5 lx → raw 4
+- 0.5 to 1.5 lx → raw 5
+- 1.5 to 3 lx → raw 6
+- 3 to 6 lx → raw 7
+- up to 10 lx → raw 11
 
-This replaces the earlier hard same-room sensor pause. The app keeps observing while the screen is on, but it becomes harder for noisy lux data to trigger brightness writes.
-
-## Battery-aware protection
-
-The app uses a battery-aware protection layer:
-
-- `ACTIVE_SCREEN_ON`: sensor is active and protection evaluates brightness.
-- `SCREEN_OFF_SLEEP`: screen is off, the light sensor is unregistered, interval evaluation is suspended, and the notification avoids live raw-brightness reads.
-- `RECOVERY_WAKE`: screen just woke, service restarted, or protection was refreshed; the app evaluates quickly once and returns to active mode.
-- `USER_HOLD_LOW_POWER`: the user has manually changed brightness, so protection backs off and evaluates less aggressively.
-
-Battery strategy:
-
-- Screen off -> unregister light sensor and stop protection interval ticks.
-- Screen on -> register light sensor and recovery evaluate.
-- Sensor samples are kept as observations; brightness writes are gated by the decision engine.
-- Sunlight rescue can write a capped readable raw before the final target is confirmed.
-- Strong upward evidence can apply faster than downward evidence.
-- Last lux persistence uses RAM cache first and avoids reading SharedPreferences on the sensor hot path.
-- Battery counters are RAM-first and flushed on service stop instead of writing SharedPreferences on every sensor sample.
-- Manual brightness changes are detected by a `SCREEN_BRIGHTNESS` ContentObserver instead of relying on the sensor loop.
-- App-write grace is started before app-driven brightness writes so the observer does not mistake the app's own write for a user override.
-- Service health understands `SCREEN_OFF_SLEEP`, so sleep mode is not falsely reported as stale/limited.
-- Normal sensor-sample logs are suppressed unless a decision is important; diagnostic mode shows battery counters.
+Higher ranges continue through the protected interpolation curve up to raw 49.
 
 ## Current protection buckets
-
-These are the raw values currently used by the app. The curve includes guarded deep-night buckets below the normal 12% floor:
 
 - 5% = raw 4
 - 8% = raw 5
@@ -165,65 +160,38 @@ These are the raw values currently used by the app. The curve includes guarded d
 - 58% = raw 46
 - 60% = raw 49
 
-The percentages are app-level protection buckets, not a promise that Android or HyperOS will display the same visual percentage on every device.
+These percentages are app-level protection buckets, not guaranteed HyperOS UI percentages.
 
-## Active raw curve
+## Battery-aware protection
 
-The active protection curve is intentionally dense in the dark-room range, then gradually wider in bright-room and outdoor ranges:
+- Screen off unregisters the light sensor and suspends interval evaluation.
+- Screen on rebuilds fresh ambient history instead of trusting stale sensor state.
+- Ring-buffer and controller state remain in RAM.
+- Accepted ambient lux is persisted only when needed.
+- Diagnostic data is throttled.
+- Brightness writes occur only after ambient transition, rescue, settle, or meaningful raw change.
+- The foreground service and brightness observer remain active only while protection is enabled.
 
-- up to 0.5 lx -> raw 4
-- up to 1.5 lx -> raw 5
-- up to 3 lx -> raw 6
-- up to 6 lx -> raw 7
-- up to 10 lx -> raw 11
-- up to 16 lx -> raw 13
-- up to 25 lx -> raw 14
-- up to 40 lx -> raw 16
-- up to 65 lx -> raw 17
-- up to 100 lx -> raw 19
-- up to 150 lx -> raw 21
-- up to 230 lx -> raw 23
-- up to 350 lx -> raw 25
-- up to 520 lx -> raw 28
-- up to 800 lx -> raw 31
-- up to 1200 lx -> raw 34
-- up to 1800 lx -> raw 37
-- up to 2600 lx -> raw 40
-- up to 3800 lx -> raw 43
-- up to 5500 lx -> raw 46
-- above 5500 lx -> raw 49
+## Diagnostic mode
 
-Movement rules:
+Diagnostics now expose:
 
-- Dimming into raw 4, 5, or 6 requires stronger confirmation.
-- Leaving deep-night brightness is faster than entering it.
-- Strong upward evidence can move sooner than downward evidence.
-- Sunlight recovery can make a capped intermediate rescue write before final confirmation.
-- User brightness changes still override protection through user hold.
-
-## Quick Settings Tile
-
-The tile is aligned with the one-button product direction:
-
-- Tap to turn Screen Protection on.
-- Tap again to turn it off.
-- Manual brightness cycling is no longer the primary tile behavior.
+- accepted ambient lux;
+- fast lux;
+- slow lux;
+- darkening and brightening thresholds;
+- ambient action and reason;
+- current and target raw;
+- decision reason and confidence;
+- battery and learning counters.
 
 ## Required setup
 
-For reliable protection on HyperOS, grant these manually when prompted:
+For reliable operation on HyperOS, grant manually when prompted:
 
 - Modify system settings
 - Notification permission on Android 13+
 - Unrestricted battery / no battery optimization
 - HyperOS Autostart / No restrictions / Lock in Recents when available
 
-## Inspiration for future algorithm work
-
-Future protection-policy work should borrow ideas from:
-
-- `wluma`: learn from manual user brightness changes after a cooldown instead of reacting to every small adjustment.
-- `Clight`: use curves, smooth transitions, sensor-rejection logic, and pause/resume behavior instead of scattered if/else rules.
-- `Auto-Shine`: event-driven sampling, interpolated curves, and minimal intervention.
-
-The app should still keep the core promise: simple outside, intelligent inside.
+The app should remain simple outside and operate as a layered control system inside.
