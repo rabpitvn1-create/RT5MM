@@ -4,10 +4,9 @@ import android.content.Context;
 import android.os.Handler;
 
 public final class ProtectionTransitionEngine {
-    private static final int MIN_UP_STEP_RAW = 2;
-    private static final int MAX_UP_STEP_RAW = 8;
-    private static final int MAX_DOWN_STEP_RAW = 6;
-    private static final int MAX_DEEP_NIGHT_STEP_RAW = 2;
+    private static final int MAX_WRITES_PER_TRANSITION = 3;
+    private static final int MAX_WRITES_AFTER_INTERMEDIATE = 2;
+    private static final long INTERMEDIATE_LINK_WINDOW_MS = 5000L;
 
     private static final long UP_STEP_MS = 90L;
     private static final long DOWN_STEP_MS = 120L;
@@ -16,7 +15,10 @@ public final class ProtectionTransitionEngine {
     private final Context appContext;
     private final Handler handler;
     private int targetRaw = -1;
+    private int writesRemaining;
     private boolean running = false;
+    private int linkedFinalTargetRaw = -1;
+    private long linkedIntermediateAt;
 
     public ProtectionTransitionEngine(Context context, Handler handler) {
         this.appContext = context.getApplicationContext();
@@ -26,6 +28,9 @@ public final class ProtectionTransitionEngine {
     public void cancel() {
         running = false;
         targetRaw = -1;
+        writesRemaining = 0;
+        linkedFinalTargetRaw = -1;
+        linkedIntermediateAt = 0L;
         handler.removeCallbacks(stepRunnable);
     }
 
@@ -35,6 +40,10 @@ public final class ProtectionTransitionEngine {
 
     public int getTargetRaw() {
         return targetRaw;
+    }
+
+    public int getWritesRemainingForTest() {
+        return writesRemaining;
     }
 
     public void recoverToReadableRaw(
@@ -57,6 +66,7 @@ public final class ProtectionTransitionEngine {
         BrightnessLevels.markAppBrightnessWriteGrace(appContext);
         boolean ok = BrightnessLevels.applyProtectedRaw(appContext, safeRescue);
         if (ok) {
+            linkIntermediateToFinal(safeFinalTarget);
             ProtectionBatteryStats.recordBrightnessWrite(appContext);
             BrightnessLogManager.appendSnapshot(
                     appContext,
@@ -91,6 +101,7 @@ public final class ProtectionTransitionEngine {
         BrightnessLevels.markAppBrightnessWriteGrace(appContext);
         boolean ok = BrightnessLevels.applyProtectedRaw(appContext, safeSettle);
         if (ok) {
+            linkIntermediateToFinal(safeFinalTarget);
             ProtectionBatteryStats.recordBrightnessWrite(appContext);
             BrightnessLogManager.appendSnapshot(
                     appContext,
@@ -111,6 +122,7 @@ public final class ProtectionTransitionEngine {
         if (currentRaw == safeTarget) {
             targetRaw = safeTarget;
             running = false;
+            writesRemaining = 0;
             handler.removeCallbacks(stepRunnable);
             BrightnessLevels.saveCurrentPercent(
                     appContext,
@@ -123,12 +135,21 @@ public final class ProtectionTransitionEngine {
             return;
         }
 
+        if (running && targetRaw == safeTarget) {
+            return;
+        }
+
         targetRaw = safeTarget;
+        writesRemaining = isLinkedIntermediate(safeTarget)
+                ? MAX_WRITES_AFTER_INTERMEDIATE
+                : MAX_WRITES_PER_TRANSITION;
+        clearIntermediateLink();
         running = true;
         handler.removeCallbacks(stepRunnable);
         BrightnessLogManager.appendSnapshot(
                 appContext,
-                "TRANSITION_START_RAW_" + currentRaw + "_TO_" + safeTarget + "_" + safe(reason),
+                "TRANSITION_START_RAW_" + currentRaw + "_TO_" + safeTarget
+                        + "_BUDGET_" + writesRemaining + "_" + safe(reason),
                 AutoBrightnessManager.getLastLux(appContext));
         handler.post(stepRunnable);
     }
@@ -136,7 +157,8 @@ public final class ProtectionTransitionEngine {
     private final Runnable stepRunnable = new Runnable() {
         @Override
         public void run() {
-            if (!running || targetRaw < 0) {
+            if (!running || targetRaw < 0 || writesRemaining <= 0) {
+                running = false;
                 return;
             }
 
@@ -146,12 +168,7 @@ public final class ProtectionTransitionEngine {
                 return;
             }
 
-            int direction = targetRaw > currentRaw ? 1 : -1;
-            int distance = Math.abs(targetRaw - currentRaw);
-            int stepSize = getAdaptiveStepSize(currentRaw, targetRaw, distance);
-            int nextRaw = currentRaw + direction * Math.min(stepSize, distance);
-            nextRaw = ProtectionCurveEngine.clampRaw(nextRaw);
-
+            int nextRaw = calculateBudgetedNextRaw(currentRaw, targetRaw, writesRemaining);
             BrightnessLevels.markAppBrightnessWriteGrace(appContext);
             boolean ok = BrightnessLevels.applyProtectedRaw(appContext, nextRaw);
             if (!ok) {
@@ -160,11 +177,20 @@ public final class ProtectionTransitionEngine {
                         "TRANSITION_WRITE_FAILED_RAW_" + nextRaw,
                         AutoBrightnessManager.getLastLux(appContext));
                 running = false;
+                writesRemaining = 0;
                 return;
             }
+
+            writesRemaining--;
             ProtectionBatteryStats.recordBrightnessWrite(appContext);
 
-            if (nextRaw == targetRaw) {
+            if (nextRaw == targetRaw || writesRemaining <= 0) {
+                if (nextRaw != targetRaw) {
+                    BrightnessLevels.markAppBrightnessWriteGrace(appContext);
+                    if (BrightnessLevels.applyProtectedRaw(appContext, targetRaw)) {
+                        ProtectionBatteryStats.recordBrightnessWrite(appContext);
+                    }
+                }
                 finishTransition();
                 return;
             }
@@ -173,8 +199,23 @@ public final class ProtectionTransitionEngine {
         }
     };
 
+    static int calculateBudgetedNextRaw(int currentRaw, int targetRaw, int writesRemaining) {
+        if (writesRemaining <= 1) {
+            return targetRaw;
+        }
+        int distance = Math.abs(targetRaw - currentRaw);
+        if (distance <= 2) {
+            return targetRaw;
+        }
+
+        float fraction = writesRemaining >= 3 ? 0.58f : 0.72f;
+        int move = Math.max(1, (int) Math.ceil(distance * fraction));
+        return currentRaw + (targetRaw > currentRaw ? move : -move);
+    }
+
     private void finishTransition() {
         running = false;
+        writesRemaining = 0;
         BrightnessLogManager.logSnapshotIfChanged(
                 appContext,
                 "TRANSITION_DONE_RAW_" + targetRaw,
@@ -184,26 +225,23 @@ public final class ProtectionTransitionEngine {
     private void stopCurrentTransitionAt(int raw) {
         running = false;
         targetRaw = raw;
+        writesRemaining = 0;
         handler.removeCallbacks(stepRunnable);
     }
 
-    private int getAdaptiveStepSize(int currentRaw, int targetRaw, int distance) {
-        if (distance <= 2) {
-            return distance;
-        }
+    private void linkIntermediateToFinal(int finalTargetRaw) {
+        linkedFinalTargetRaw = finalTargetRaw;
+        linkedIntermediateAt = System.currentTimeMillis();
+    }
 
-        if (targetRaw > currentRaw) {
-            int proportional = (int) Math.ceil(distance * 0.35f);
-            return clamp(proportional, MIN_UP_STEP_RAW, MAX_UP_STEP_RAW);
-        }
+    private boolean isLinkedIntermediate(int finalTargetRaw) {
+        return linkedFinalTargetRaw == finalTargetRaw
+                && System.currentTimeMillis() - linkedIntermediateAt <= INTERMEDIATE_LINK_WINDOW_MS;
+    }
 
-        if (targetRaw <= 6) {
-            int proportional = (int) Math.ceil(distance * 0.22f);
-            return clamp(proportional, 1, MAX_DEEP_NIGHT_STEP_RAW);
-        }
-
-        int proportional = (int) Math.ceil(distance * 0.30f);
-        return clamp(proportional, 1, MAX_DOWN_STEP_RAW);
+    private void clearIntermediateLink() {
+        linkedFinalTargetRaw = -1;
+        linkedIntermediateAt = 0L;
     }
 
     private long getAdaptiveDelayMs(int currentRaw, int targetRaw) {
@@ -214,10 +252,6 @@ public final class ProtectionTransitionEngine {
             return DEEP_NIGHT_STEP_MS;
         }
         return DOWN_STEP_MS;
-    }
-
-    private int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
     }
 
     private String safe(String value) {
