@@ -5,8 +5,8 @@ package com.ericko.redmiscreenbrightness;
  *
  * Ambient estimation, hysteresis, debounce, sunlight rescue, and dark settle are
  * handled by {@link ProtectionAmbientController}. This class deliberately stays
- * small: it prevents insignificant screen writes and converts a confirmed
- * ambient state into APPLY / NOOP / WAIT.
+ * small: it prevents insignificant writes and converts only accepted ambient
+ * state into APPLY / NOOP / WAIT.
  */
 public final class BrightnessDecisionEngine {
     private static final int SCREEN_RAW_HYSTERESIS = 1;
@@ -58,45 +58,64 @@ public final class BrightnessDecisionEngine {
     }
 
     public void reset() {
-        // No rolling state remains here. Ambient history belongs to the ambient controller.
+        // Ambient history belongs to ProtectionAmbientController.
     }
 
     /**
-     * Evaluates a lux value that has already passed ambient fast/slow confirmation.
+     * Evaluates a lux value that has already passed ambient confirmation.
+     * forceApply means the caller is attempting to use a cached/recovery value;
+     * cached lux is diagnostic-only and must never bypass the ambient controller.
      */
     public Decision decideConfirmedAmbient(float ambientLux, int currentRaw, boolean forceApply) {
         int targetRaw = ProtectionCurveEngine.getTargetRaw(ambientLux);
+
+        if (forceApply) {
+            return decision(
+                    Action.WAIT,
+                    "WAIT_FRESH_AMBIENT_CONFIRMATION",
+                    targetRaw,
+                    0L,
+                    0.20f);
+        }
+
         int delta = targetRaw - currentRaw;
         int absDelta = Math.abs(delta);
         boolean deepNightTarget = ProtectionCurveEngine.isDeepNightRaw(targetRaw);
 
-        // A stale persisted lux value must never force the screen directly into raw 4-6.
-        if (forceApply && deepNightTarget) {
-            return decision(Action.WAIT, "WAIT_DEEP_NIGHT_AMBIENT_CONFIRMATION", targetRaw, 0L, 0.35f);
-        }
-
         if (absDelta <= SCREEN_RAW_HYSTERESIS) {
-            return decision(Action.NOOP, "NOOP_SCREEN_RAW_HYSTERESIS", targetRaw, 0L, 0.95f);
-        }
-
-        if (forceApply) {
-            return decision(Action.APPLY, "APPLY_FORCED_CONFIRMED_AMBIENT", targetRaw, 0L, 1f);
+            return decision(
+                    Action.NOOP,
+                    "NOOP_SCREEN_RAW_HYSTERESIS",
+                    targetRaw,
+                    0L,
+                    0.95f);
         }
 
         if (delta > 0) {
-            return decision(Action.APPLY, "APPLY_CONFIRMED_AMBIENT_UP", targetRaw, 0L, 0.90f);
+            return decision(
+                    Action.APPLY,
+                    "APPLY_CONFIRMED_AMBIENT_UP",
+                    targetRaw,
+                    0L,
+                    0.90f);
         }
         if (deepNightTarget) {
-            return decision(Action.APPLY, "APPLY_CONFIRMED_DEEP_NIGHT", targetRaw, 0L, 0.95f);
+            return decision(
+                    Action.APPLY,
+                    "APPLY_CONFIRMED_DEEP_NIGHT",
+                    targetRaw,
+                    0L,
+                    0.95f);
         }
-        return decision(Action.APPLY, "APPLY_CONFIRMED_AMBIENT_DOWN", targetRaw, 0L, 0.90f);
+        return decision(
+                Action.APPLY,
+                "APPLY_CONFIRMED_AMBIENT_DOWN",
+                targetRaw,
+                0L,
+                0.90f);
     }
 
-    /**
-     * Compatibility entry point for callers compiled against the previous API.
-     * New sensor paths should call decideConfirmedAmbient only after the ambient
-     * controller accepts a state transition.
-     */
+    /** Compatibility entry point for callers compiled against the previous API. */
     public Decision decide(float lux, int currentRaw, long now, boolean forceApply) {
         return decideConfirmedAmbient(lux, currentRaw, forceApply);
     }
