@@ -23,9 +23,9 @@ android {
 }
 
 def launcherIconParts = fileTree('src/main/icon-src') {
-    include 'original_launcher.jpg.b64.part*'
+    include 'original_launcher.webp.b64.part*'
 }
-def generatedLauncherIcon = file("$buildDir/generated/iconRes/drawable-nodpi/ic_launcher_original.jpg")
+def generatedLauncherIcon = file("$buildDir/generated/iconRes/drawable-nodpi/ic_launcher_original.webp")
 
 tasks.register('generateOriginalLauncherIcon') {
     inputs.files(launcherIconParts)
@@ -33,8 +33,8 @@ tasks.register('generateOriginalLauncherIcon') {
 
     doLast {
         def parts = launcherIconParts.files.sort { a, b -> a.name <=> b.name }
-        if (parts.size() != 9) {
-            throw new GradleException("Expected 9 original launcher icon parts, found ${parts.size()}")
+        if (parts.size() != 6) {
+            throw new GradleException("Expected 6 original launcher icon parts, found ${parts.size()}")
         }
 
         def encoded = parts.collect { it.getText('UTF-8').trim() }.join('')
@@ -46,7 +46,7 @@ tasks.register('generateOriginalLauncherIcon') {
                 .digest(decoded)
                 .collect { String.format('%02x', it & 0xff) }
                 .join('')
-        def expected = 'bae5a3ce9104b8f770897f5895ac7f7ec05f9af000ed00a5dbe850d062fdff3c'
+        def expected = 'ad9736d0d4a962087cb20a3f7e4f0af7b9dd6af23744836636215ee94fcc7228'
         if (digest != expected) {
             throw new GradleException("Original launcher icon checksum mismatch: ${digest}")
         }
