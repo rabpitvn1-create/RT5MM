@@ -8,8 +8,8 @@
 
     <application
         android:label="@string/app_name"
-        android:icon="@drawable/ic_launcher_sun_anime"
-        android:roundIcon="@drawable/ic_launcher_sun_anime"
+        android:icon="@drawable/ic_launcher_original"
+        android:roundIcon="@drawable/ic_launcher_original"
         android:theme="@style/AppTheme">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
