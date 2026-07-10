@@ -6,11 +6,11 @@ The app is not meant to be a general brightness controller. Its job is to keep t
 
 ## Latest APK update
 
-- Version: 1.0.32
+- Version: 1.0.33
 - Release channel: debug APK
 - Release tag: `screen-protection-latest`
 - APK filename: `Screen-Protection-debug.apk`
-- Release note: adds a confirmed deep-night raw floor so true 0 lux can settle near raw 4 instead of raw 7.
+- Release note: adds Sunlight Fast Recovery so sudden strong upward light changes can quickly move to a readable rescue raw before final confirmation.
 
 ## Product direction
 
@@ -68,6 +68,26 @@ This does not mean every sudden 0 lux reading immediately forces raw 4. Deep-nig
 
 This is meant to handle true dark-room use without letting a hand-covered sensor or short lux drop instantly make the screen too dark.
 
+## Sunlight Fast Recovery
+
+Real-world testing showed that moving suddenly from a dark or indoor area into direct sun can make the screen feel unreadable for a few seconds if every upward change waits for the full decision window.
+
+The app now has a fast upward-only rescue path:
+
+- It only runs for strong upward changes.
+- It does not run during user hold.
+- It requires recent upward agreement instead of a single lux spike.
+- It does not jump to the final target or max brightness.
+- It writes a readable intermediate rescue raw, then lets the normal decision gate confirm the final target.
+
+Rescue targets are intentionally capped:
+
+- If current raw is below 16, rescue is capped at raw 24.
+- If current raw is 16 to 23, rescue is capped at raw 31.
+- If current raw is already 24 or higher, the normal transition path is used.
+
+This keeps outdoor readability responsive without turning every brief glare spike into a full-brightness jump.
+
 ## Brightness Decision Gate
 
 The app no longer treats every lux change as a reason to change brightness. The core question is now:
@@ -80,12 +100,13 @@ The app no longer treats every lux change as a reason to change brightness. The 
 - `WAIT`: more evidence is needed.
 - `IGNORE_SPIKE`: the latest lux jump looks like a short spike.
 - `SENSOR_NOISY`: samples are too inconsistent to trust.
+- `SUNLIGHT_RESCUE`: upward light change is strong enough to move to a readable intermediate raw.
 - `APPLY`: the target raw is confirmed and can be transitioned.
 
 Important behavior:
 
 - Decisions are based on target raw, not lux alone.
-- A one-sample spike is not allowed to write brightness.
+- A one-sample spike is not allowed to write final brightness.
 - Small raw changes need stronger confirmation than large upward changes.
 - Downward changes are confirmed more slowly than upward changes.
 - Deep-night downward changes are confirmed slowest.
@@ -107,6 +128,7 @@ Battery strategy:
 - Screen off -> unregister light sensor and stop protection interval ticks.
 - Screen on -> register light sensor and recovery evaluate.
 - Sensor samples are kept as observations; brightness writes are gated by the decision engine.
+- Sunlight rescue can write a capped readable raw before the final target is confirmed.
 - Strong upward evidence can apply faster than downward evidence.
 - Last lux persistence uses RAM cache first and avoids reading SharedPreferences on the sensor hot path.
 - Battery counters are RAM-first and flushed on service stop instead of writing SharedPreferences on every sensor sample.
@@ -176,6 +198,7 @@ Movement rules:
 - Dimming into raw 4, 5, or 6 requires stronger confirmation.
 - Leaving deep-night brightness is faster than entering it.
 - Strong upward evidence can move sooner than downward evidence.
+- Sunlight recovery can make a capped intermediate rescue write before final confirmation.
 - User brightness changes still override protection through user hold.
 
 ## Quick Settings Tile
