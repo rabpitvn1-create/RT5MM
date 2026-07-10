@@ -1,141 +1,135 @@
-# Redmi Screen Protection
+# Screen Protection 2.0
 
-A personal one-button Android screen-protection and adaptive-brightness app for Redmi / HyperOS.
+A one-button adaptive-brightness controller built specifically for Redmi / HyperOS.
 
-The app keeps the system brightness mode under its own control while enabled, observes ambient light only while the screen is on, respects manual user changes, and restores the previous Android brightness mode when protection stops.
+The app does not reuse Android's automatic-brightness output. While enabled, it temporarily takes ownership of system brightness, reads the physical ambient-light sensor, estimates a stable environmental state, maps that state onto a conservative Redmi raw-brightness curve, and restores the previous Android brightness mode when protection is turned off.
 
-## Latest APK update
+## Release
 
-- Version: **1.0.36**
-- Release channel: debug APK
+- Version: **2.0.0**
+- Package: `com.ericko.redmiscreenbrightness`
+- Minimum Android: 7.0 / API 24
+- Target Android: API 35
 - Release tag: `screen-protection-latest`
-- APK filename: `Screen-Protection-debug.apk`
-- Release note: begins the battery-optimization phase by moving diagnostic logging out of the sensor hot path, reducing periodic service wakeups, limiting brightness transitions to a three-write budget, and adding a tested adaptive sampling policy foundation.
+- APK: `Screen-Protection-debug.apk`
 
-## Active brightness architecture
+## Control pipeline
 
 ```text
-Light sensor
-→ AmbientLightRingBuffer
-→ ProtectionAmbientController
-→ ProtectionCurveEngine
-→ BrightnessDecisionEngine
-→ ProtectionTransitionEngine
+Physical light sensor
+→ timestamped ambient ring buffer
+→ fast and slow lux estimates
+→ hysteresis + asymmetric debounce
+→ occlusion and deep-night guards
+→ calibrated lux-to-raw curve
+→ raw write hysteresis
+→ bounded transition engine
 → Android system brightness
 ```
 
-The layers remain separate:
+The data types stay separate:
 
 ```text
-Sensor lux is an observation.
-Accepted ambient lux is environmental state.
-Target raw is a desired output.
-A brightness write is a controlled action.
+Sensor lux        = observation
+Accepted lux      = environmental state
+Target raw        = desired output
+Brightness write  = controlled side effect
 ```
 
-## Response behavior
+Cached lux is diagnostic-only. Screen wake, process recovery and manual refresh always rebuild fresh sensor history before changing brightness.
 
-- Fast lux horizon: about 700 ms.
-- Slow lux horizon: about 3.2 seconds.
-- Strong brightening debounce: about 100 ms.
-- Normal brightening debounce: about 350 ms.
-- Strong darkening debounce: about 220 ms.
-- Normal darkening debounce: about 650 ms.
-- Confirmed deep-night entry: about 3 seconds.
-- Sunlight recovery uses a capped intermediate raw rather than blindly jumping to maximum.
-- Dark settle can quickly move into raw 8–14 while raw 4–6 remains guarded by slow-lux confirmation.
+## Original raw calibration retained
 
-## Battery optimization phase
+The verified Redmi anchors are permanent regression-tested invariants:
 
-### RAM-first diagnostic logging
+| Display level | System raw |
+|---:|---:|
+| 20% | 11 |
+| 30% | 17 |
+| 40% | 26 |
+| 50% | 38 |
+| 60% | 49 |
 
-`BrightnessLogManager` no longer writes SharedPreferences from sensor, decision, and transition hot paths.
+Intermediate values use monotonic logarithmic interpolation. The protected curve is clamped to raw **4–49**.
 
-- Duplicate suppression stays in RAM.
-- Log entries accumulate in a bounded in-memory buffer.
-- The buffer is flushed on screen-off, service stop, service destruction, or explicit export.
-- Normal duplicate log events are counted without creating a disk write.
+## Ambient estimator
 
-### Reduced service wakeups
+- Fast horizon: approximately 700 ms.
+- Slow horizon: approximately 3.2 seconds.
+- Brightening is faster than darkening.
+- Strong sunlight has a guarded readable intermediate step.
+- Sudden darkness has a safe intermediate settle.
+- Raw 4–6 requires confirmed deep-night evidence.
+- A dedicated occlusion guard rejects a brief hand or pocket cover after a bright environment.
+- Hysteresis prevents repeated writes near a threshold.
 
-The foreground service no longer wakes every 30–60 seconds for routine housekeeping.
+## Adaptive sampling is active
 
-- Health checkpoint: every 5 minutes.
-- Notification fallback refresh: every 15 minutes.
-- Real state changes still update the notification immediately.
-- Heartbeat timers cannot map cached lux into brightness.
+The sampling policy is connected directly to Android sensor registration:
 
-### Three-write transition budget
+- `FAST_TRACK`: 100 ms after wake or a meaningful ambient transition.
+- `ACTIVE_TRACK`: 300 ms while the environment is evolving.
+- `STABLE_ECO`: 850 ms after sustained stability.
+- `USER_HOLD_ECO`: 1.5 seconds while respecting a manual user brightness choice.
+- `SCREEN_OFF_SLEEP`: sensor completely unregistered.
 
-A normal confirmed brightness transition now uses at most three controlled writes:
+Minimum mode dwell time prevents register/unregister thrashing.
 
-```text
-current raw
-→ coarse response
-→ refinement
-→ final target
-```
+## Manual user intent
 
-A sunlight rescue or dark settle counts as the first intermediate action; when the later confirmed target matches that sequence, only two additional transition writes are budgeted.
+A real external brightness change is distinguished from an app write by matching the exact raw value and a short observer window. A stable manual change enters user hold rather than being overwritten.
 
-Small changes can complete in one write. Retargeting to the same active target does not restart the transition.
+- Normal hold: 10 minutes.
+- Deep-night hold: 5 minutes.
+- Hold can end early after a major environmental change.
+- Opening the app or Quick Settings while protection is already running no longer clears the hold.
 
-### Adaptive sampling policy foundation
+## Battery behavior
 
-`ProtectionSamplingController` defines the intended power modes:
+- The light sensor is off whenever the display is off.
+- Sampling slows automatically in stable conditions.
+- Diagnostic logging is RAM-first and bounded.
+- Routine health wakeups do not calculate or write brightness.
+- Normal transitions use at most three writes.
+- Duplicate targets and raw differences of one step are skipped.
+- SharedPreferences writes are throttled and reserved for meaningful state.
 
-- `FAST_TRACK`: 100 ms sampling after wake or meaningful ambient change.
-- `ACTIVE_TRACK`: 300 ms sampling while the environment is still evolving.
-- `STABLE_ECO`: 850 ms sampling after sustained hysteresis hold.
-- `USER_HOLD_ECO`: 1.5 second sampling while manual brightness hold is active.
-- `SCREEN_OFF_SLEEP`: sensor off.
+## App experience
 
-The policy includes minimum mode dwell time so the app does not waste energy repeatedly unregistering and registering the sensor. Unit tests cover stable-to-eco transitions, immediate return to fast tracking after a real light change, user-hold eco mode, and screen-off sleep.
+The main screen exposes one primary protection switch, live environment and brightness state, required setup, optional reliability recommendations, and expandable diagnostics.
 
-The sampling policy is deliberately separated from Android sensor registration so it can be verified independently before being connected to the active manager path.
+Required:
 
-## Deep-night curve
+- Modify system settings.
+- A hardware ambient-light sensor.
 
-- 0–0.5 lx → raw 4
-- 0.5–1.5 lx → raw 5
-- 1.5–3 lx → raw 6
-- 3–6 lx → raw 7
-- up to 10 lx → raw 11
+Recommended on HyperOS:
 
-Higher ranges interpolate through the protected curve up to raw 49.
+- Notification permission on Android 13+.
+- Unrestricted battery use.
+- Autostart / No restrictions / Lock in Recents when available.
 
-## User control
+Notification and battery recommendations improve persistence but do not incorrectly block startup.
 
-Manual brightness changes enter user hold instead of being immediately overwritten. During hold, rescue, settle, and confirmed target writes are blocked. A sufficiently large environment change releases the hold and rebuilds fresh ambient history.
+## Quick Settings and recovery
 
-## Current battery behavior
+- Quick Settings tile toggles protection directly.
+- Boot and package replacement restore protection only when it was already enabled.
+- The foreground service sleeps with the screen off and resumes with fresh ambient history.
+- The previous Android brightness mode is restored when protection stops.
 
-- Screen off unregisters the light sensor.
-- Screen on rebuilds a fresh ambient buffer.
-- Sensor history and battery counters are RAM-first.
-- Brightness transitions have a bounded write budget.
-- Stable indoor observation produces no brightness writes.
-- The service heartbeat cannot modify brightness.
-- Diagnostic logs are no longer persisted on every event.
+## Automated verification
 
-## Automated checks
+GitHub Actions runs unit tests before every APK build. Coverage includes:
 
-GitHub Actions runs `:app:testDebugUnitTest` before building or publishing an APK. Tests now cover:
+- weighted ambient history;
+- newest-sample influence;
+- sunlight rescue;
+- safe dark settle;
+- zero-timestamp warmup;
+- adaptive sampling state transitions and anti-thrash behavior;
+- bounded transition calculations;
+- monotonic lux-to-raw output;
+- immutable original Redmi raw anchors.
 
-- immediate influence of the newest lux sample;
-- sunlight rescue after repeated strong-light samples;
-- safe dark intermediate settle;
-- zero-timestamp warmup regression;
-- adaptive sampling state transitions;
-- three-write transition budget calculations.
-
-## Required HyperOS setup
-
-Grant these manually when prompted:
-
-- Modify system settings
-- Notification permission on Android 13+
-- Unrestricted battery / no battery optimization
-- HyperOS Autostart / No restrictions / Lock in Recents when available
-
-The app remains simple outside and uses a layered state-estimation, power-management, and control system inside.
+The main workflow publishes the latest successful `main` APK under the `screen-protection-latest` release tag.

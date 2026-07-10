@@ -1,6 +1,8 @@
 package com.ericko.redmiscreenbrightness;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -20,7 +22,7 @@ public class ProtectionSamplingControllerTest {
         assertEquals(ProtectionSamplingController.Mode.ACTIVE_TRACK, controller.getMode());
 
         controller.onAmbientResult(
-                12_000L,
+                13_000L,
                 ProtectionAmbientController.Action.HOLD,
                 "AMBIENT_HYSTERESIS_HOLD",
                 false);
@@ -28,7 +30,7 @@ public class ProtectionSamplingControllerTest {
     }
 
     @Test
-    public void meaningfulAmbientChangeImmediatelyReturnsToFastTrack() {
+    public void meaningfulChangeImmediatelyReturnsToFastTrack() {
         ProtectionSamplingController controller = new ProtectionSamplingController();
         controller.reset(0L);
         controller.onAmbientResult(
@@ -37,13 +39,13 @@ public class ProtectionSamplingControllerTest {
                 "AMBIENT_HYSTERESIS_HOLD",
                 false);
         controller.onAmbientResult(
-                12_000L,
+                13_000L,
                 ProtectionAmbientController.Action.HOLD,
                 "AMBIENT_HYSTERESIS_HOLD",
                 false);
 
         controller.onAmbientResult(
-                13_000L,
+                14_000L,
                 ProtectionAmbientController.Action.AMBIENT_BRIGHTENED,
                 "FAST_SLOW_BRIGHT_CONFIRMED",
                 false);
@@ -68,5 +70,18 @@ public class ProtectionSamplingControllerTest {
 
         controller.onScreenWake(5_000L);
         assertEquals(ProtectionSamplingController.Mode.FAST_TRACK, controller.getMode());
+    }
+
+    @Test
+    public void reregistrationPolicyAvoidsModeThrash() {
+        ProtectionSamplingController controller = new ProtectionSamplingController();
+        controller.reset(1_000L);
+
+        assertFalse(controller.shouldReregister(
+                ProtectionSamplingController.Mode.ACTIVE_TRACK, 2_000L));
+        assertTrue(controller.shouldReregister(
+                ProtectionSamplingController.Mode.ACTIVE_TRACK, 4_000L));
+        assertTrue(controller.shouldReregister(
+                ProtectionSamplingController.Mode.SCREEN_OFF_SLEEP, 1_100L));
     }
 }

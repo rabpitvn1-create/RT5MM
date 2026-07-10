@@ -7,6 +7,7 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,439 +19,379 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-public class MainActivity extends Activity {
-    private static final int REQUEST_POST_NOTIFICATIONS = 1001;
-    private static final long STATUS_REFRESH_MS = 1000L;
+public final class MainActivity extends Activity {
+    private static final int REQUEST_NOTIFICATIONS = 1001;
+    private static final long REFRESH_MS = 1200L;
+    private static final int ORANGE = 0xFFFF6900;
+    private static final int INK = 0xFF1D1D1F;
+    private static final int MUTED = 0xFF66666A;
+    private static final int CARD = 0xFFFFFFFF;
+    private static final int BACKGROUND = 0xFFFFFCF7;
 
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private TextView stateText;
+    private TextView detailText;
     private TextView setupText;
-    private TextView statusText;
-    private Button toggleButton;
+    private Button primaryButton;
+    private Button writeButton;
     private Button notificationButton;
     private Button batteryButton;
     private Button hyperOsButton;
-    private boolean diagnosticVisible = false;
+    private Button diagnosticsButton;
+    private boolean diagnosticsVisible;
 
-    private final Handler statusHandler = new Handler(Looper.getMainLooper());
-    private final Runnable statusRefreshRunnable = new Runnable() {
+    private final Runnable refreshRunnable = new Runnable() {
         @Override
         public void run() {
-            refreshStatus();
-            statusHandler.postDelayed(this, STATUS_REFRESH_MS);
+            refresh();
+            handler.postDelayed(this, REFRESH_MS);
         }
     };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-        int pad = dp(24);
-        root.setPadding(pad, dp(56), pad, pad);
-
-        TextView hyperOsLogo = new TextView(this);
-        hyperOsLogo.setText("Xiaomi HyperOS");
-        hyperOsLogo.setTextSize(28);
-        hyperOsLogo.setTypeface(Typeface.DEFAULT_BOLD);
-        hyperOsLogo.setTextColor(0xFFFF6900);
-        hyperOsLogo.setGravity(Gravity.CENTER);
-        root.addView(hyperOsLogo, new LinearLayout.LayoutParams(-1, -2));
-
-        TextView title = new TextView(this);
-        title.setText("Screen Protection");
-        title.setTextSize(24);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
-        titleParams.setMargins(0, dp(32), 0, 0);
-        root.addView(title, titleParams);
-
-        setupText = new TextView(this);
-        setupText.setTextSize(14);
-        setupText.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams setupParams = new LinearLayout.LayoutParams(-1, -2);
-        setupParams.setMargins(0, dp(20), 0, dp(12));
-        root.addView(setupText, setupParams);
-
-        View.OnLongClickListener diagnosticLongClick = new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                toggleDiagnosticMode();
-                return true;
-            }
-        };
-
-        statusText = new TextView(this);
-        statusText.setTextSize(16);
-        statusText.setGravity(Gravity.CENTER);
-        statusText.setOnLongClickListener(diagnosticLongClick);
-        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-1, -2);
-        statusParams.setMargins(0, dp(8), 0, dp(16));
-        root.addView(statusText, statusParams);
-
-        toggleButton = new Button(this);
-        toggleButton.setTextSize(18);
-        toggleButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                toggleProtection();
-            }
-        });
-        toggleButton.setOnLongClickListener(diagnosticLongClick);
-        addButton(root, toggleButton, 64);
-
-        notificationButton = new Button(this);
-        notificationButton.setVisibility(View.GONE);
-        notificationButton.setText("Grant Notification Permission");
-        notificationButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                openNotificationSetup();
-            }
-        });
-        addButton(root, notificationButton, 52);
-
-        batteryButton = new Button(this);
-        batteryButton.setVisibility(View.GONE);
-        batteryButton.setText("Disable Battery Optimization");
-        batteryButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                openBatterySetup();
-            }
-        });
-        addButton(root, batteryButton, 52);
-
-        hyperOsButton = new Button(this);
-        hyperOsButton.setVisibility(View.GONE);
-        hyperOsButton.setText("Open HyperOS Background Setup");
-        hyperOsButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                openHyperOsSetup();
-            }
-        });
-        addButton(root, hyperOsButton, 52);
-
-        setContentView(root);
-        refreshStatus();
+        setContentView(buildContent());
+        refresh();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (AutoBrightnessManager.isAutoEnabled(this)) {
-            AutoBrightnessService.start(this);
-        }
-        BrightnessLogManager.appendSnapshot(this, "MAIN_RESUME", AutoBrightnessManager.getLastLux(this));
-        statusHandler.removeCallbacks(statusRefreshRunnable);
-        statusHandler.post(statusRefreshRunnable);
+        if (AutoBrightnessManager.isAutoEnabled(this)) AutoBrightnessService.start(this);
+        handler.removeCallbacks(refreshRunnable);
+        handler.post(refreshRunnable);
     }
 
     @Override
     protected void onPause() {
-        statusHandler.removeCallbacks(statusRefreshRunnable);
+        handler.removeCallbacks(refreshRunnable);
         super.onPause();
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    public void onRequestPermissionsResult(
+            int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQUEST_POST_NOTIFICATIONS) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                    && grantResults.length > 0
-                    && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, "Notification permission granted", Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(this, "Notification permission denied. Protection can run, but visibility is limited.", Toast.LENGTH_LONG).show();
-            }
-            BrightnessLogManager.appendSnapshot(this, "NOTIFICATION_PERMISSION_RESULT", AutoBrightnessManager.getLastLux(this));
-            refreshStatus();
-        }
+        if (requestCode == REQUEST_NOTIFICATIONS) refresh();
+    }
+
+    private View buildContent() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(BACKGROUND);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(22), dp(34), dp(22), dp(34));
+        scroll.addView(root, new ScrollView.LayoutParams(-1, -2));
+
+        TextView brand = text("Xiaomi HyperOS", 14, ORANGE, true);
+        brand.setGravity(Gravity.CENTER_HORIZONTAL);
+        root.addView(brand, matchWrap());
+
+        TextView title = text("Screen Protection", 30, INK, true);
+        title.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout.LayoutParams titleParams = matchWrap();
+        titleParams.setMargins(0, dp(8), 0, dp(6));
+        root.addView(title, titleParams);
+
+        TextView subtitle = text(
+                "Adaptive brightness tuned for comfort, stability and low battery use.",
+                14,
+                MUTED,
+                false);
+        subtitle.setGravity(Gravity.CENTER_HORIZONTAL);
+        root.addView(subtitle, matchWrap());
+
+        LinearLayout statusCard = card();
+        LinearLayout.LayoutParams cardParams = matchWrap();
+        cardParams.setMargins(0, dp(24), 0, 0);
+        root.addView(statusCard, cardParams);
+
+        stateText = text("", 23, INK, true);
+        statusCard.addView(stateText, matchWrap());
+
+        detailText = text("", 15, MUTED, false);
+        LinearLayout.LayoutParams detailParams = matchWrap();
+        detailParams.setMargins(0, dp(10), 0, 0);
+        statusCard.addView(detailText, detailParams);
+
+        primaryButton = button("");
+        primaryButton.setOnClickListener(v -> toggleProtection());
+        LinearLayout.LayoutParams primaryParams = matchHeight(58);
+        primaryParams.setMargins(0, dp(18), 0, 0);
+        root.addView(primaryButton, primaryParams);
+
+        LinearLayout setupCard = card();
+        LinearLayout.LayoutParams setupCardParams = matchWrap();
+        setupCardParams.setMargins(0, dp(18), 0, 0);
+        root.addView(setupCard, setupCardParams);
+
+        TextView setupTitle = text("Setup", 18, INK, true);
+        setupCard.addView(setupTitle, matchWrap());
+        setupText = text("", 14, MUTED, false);
+        LinearLayout.LayoutParams setupParams = matchWrap();
+        setupParams.setMargins(0, dp(8), 0, dp(8));
+        setupCard.addView(setupText, setupParams);
+
+        writeButton = secondaryButton("Allow brightness control", v -> openWriteSettings());
+        notificationButton = secondaryButton("Allow notifications", v -> requestNotifications());
+        batteryButton = secondaryButton("Allow unrestricted battery", v -> openBatterySettings());
+        hyperOsButton = secondaryButton("Open HyperOS background settings", v -> openHyperOsSettings());
+        setupCard.addView(writeButton, matchHeight(48));
+        setupCard.addView(notificationButton, matchHeight(48));
+        setupCard.addView(batteryButton, matchHeight(48));
+        setupCard.addView(hyperOsButton, matchHeight(48));
+
+        diagnosticsButton = secondaryButton("Show diagnostics", v -> {
+            diagnosticsVisible = !diagnosticsVisible;
+            refresh();
+        });
+        LinearLayout.LayoutParams diagnosticParams = matchHeight(50);
+        diagnosticParams.setMargins(0, dp(14), 0, 0);
+        root.addView(diagnosticsButton, diagnosticParams);
+
+        Button shareButton = secondaryButton("Share diagnostic log", v -> shareDiagnostics());
+        root.addView(shareButton, matchHeight(50));
+
+        TextView footer = text(
+                "The app restores your previous Android brightness mode when protection is turned off.",
+                12,
+                MUTED,
+                false);
+        footer.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout.LayoutParams footerParams = matchWrap();
+        footerParams.setMargins(0, dp(18), 0, 0);
+        root.addView(footer, footerParams);
+
+        return scroll;
     }
 
     private void toggleProtection() {
-        if (!Settings.System.canWrite(this)) {
-            BrightnessLogManager.appendSnapshot(this, "WRITE_SETTINGS_MISSING_BUTTON", AutoBrightnessManager.getLastLux(this));
-            Toast.makeText(this, "Grant modify system settings first", Toast.LENGTH_SHORT).show();
-            openPermissionScreen();
-            refreshStatus();
-            return;
-        }
-
-        boolean enabled = AutoBrightnessManager.isAutoEnabled(this);
-        AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
-        if (enabled && mode == AutoBrightnessManager.Mode.USER_HOLD) {
-            AutoBrightnessService.refresh(this);
-            BrightnessLogManager.appendSnapshot(this, "PROTECTION_RESTART_FROM_BUTTON", AutoBrightnessManager.getLastLux(this));
-            Toast.makeText(this, "Screen Protection restarted", Toast.LENGTH_SHORT).show();
-            refreshStatus();
-            return;
-        }
-
-        if (enabled) {
+        if (AutoBrightnessManager.isAutoEnabled(this)) {
             AutoBrightnessService.stop(this);
-            BrightnessLogManager.appendSnapshot(this, "PROTECTION_DISABLED", AutoBrightnessManager.getLastLux(this));
             Toast.makeText(this, "Screen Protection off", Toast.LENGTH_SHORT).show();
-            refreshStatus();
+            refresh();
             return;
         }
-        enableProtection();
-    }
-
-    private void enableProtection() {
         if (!AutoBrightnessManager.hasLightSensor(this)) {
             AutoBrightnessManager.markUnavailable(this);
-            BrightnessLogManager.appendSnapshot(this, "PROTECTION_UNAVAILABLE", AutoBrightnessManager.getLastLux(this));
-            Toast.makeText(this, "Light sensor unavailable", Toast.LENGTH_SHORT).show();
-            refreshStatus();
+            Toast.makeText(this, "Light sensor unavailable", Toast.LENGTH_LONG).show();
+            refresh();
             return;
         }
-
         if (!Settings.System.canWrite(this)) {
-            BrightnessLogManager.appendSnapshot(this, "WRITE_SETTINGS_MISSING", AutoBrightnessManager.getLastLux(this));
-            Toast.makeText(this, "Grant modify system settings first", Toast.LENGTH_SHORT).show();
-            openPermissionScreen();
-            refreshStatus();
-            return;
-        }
-
-        if (!isNotificationPermissionGranted()) {
-            BrightnessLogManager.appendSnapshot(this, "NOTIFICATION_PERMISSION_MISSING", AutoBrightnessManager.getLastLux(this));
-            requestNotificationPermissionIfNeeded();
-            refreshStatus();
-            return;
-        }
-        if (!isBatteryOptimizationIgnored()) {
-            BrightnessLogManager.appendSnapshot(this, "BATTERY_OPTIMIZATION_LIMITED", AutoBrightnessManager.getLastLux(this));
-            Toast.makeText(this, "Allow unrestricted battery first", Toast.LENGTH_LONG).show();
-            openBatterySetup();
-            refreshStatus();
+            openWriteSettings();
             return;
         }
 
         AutoBrightnessService.start(this);
-        BrightnessLogManager.appendSnapshot(this, "PROTECTION_ENABLED", AutoBrightnessManager.getLastLux(this));
+        if (!notificationsGranted()) requestNotifications();
         Toast.makeText(this, "Screen Protection on", Toast.LENGTH_SHORT).show();
-        refreshStatus();
+        refresh();
     }
 
-    private void requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQUEST_POST_NOTIFICATIONS);
-        }
-    }
-
-    private void refreshStatus() {
-        boolean canWrite = Settings.System.canWrite(this);
+    private void refresh() {
         boolean enabled = AutoBrightnessManager.isAutoEnabled(this);
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
-        boolean sensorOk = AutoBrightnessManager.hasLightSensor(this);
-        boolean notificationOk = isNotificationPermissionGranted();
-        boolean batteryOk = isBatteryOptimizationIgnored();
-        int percent = BrightnessLevels.getCurrentPercent(this);
-        String setupState = getSetupState(canWrite, sensorOk, notificationOk, batteryOk);
-        BrightnessLogManager.logSnapshotIfChanged(this, "MAIN_STATUS_REFRESH", AutoBrightnessManager.getLastLux(this));
-
-        if (!sensorOk) {
-            toggleButton.setText("Protection Unavailable");
-        } else if (!canWrite || !notificationOk || !batteryOk) {
-            toggleButton.setText("Set Up Protection");
-        } else if (enabled && mode == AutoBrightnessManager.Mode.USER_HOLD) {
-            toggleButton.setText("Restart Protection");
-        } else {
-            toggleButton.setText(enabled ? "Turn Protection Off" : "Turn Protection On");
-        }
-
-        notificationButton.setVisibility(View.GONE);
-        batteryButton.setVisibility(View.GONE);
-        hyperOsButton.setVisibility(View.GONE);
-
-        if (diagnosticVisible) {
-            setupText.setText("Diagnostic mode · long-press status or button to hide");
-            statusText.setText(AutoBrightnessManager.getDiagnosticText(this) + "\n\n" + ProtectionServiceHealth.getDiagnosticText(this));
-        } else {
-            setupText.setText(getSetupMessage(canWrite, sensorOk, notificationOk, batteryOk, setupState));
-            statusText.setText(getMainStatusText(enabled, mode, sensorOk, percent));
-        }
-    }
-
-    private String getMainStatusText(boolean enabled, AutoBrightnessManager.Mode mode, boolean sensorOk, int percent) {
-        String state;
-        if (!sensorOk || mode == AutoBrightnessManager.Mode.UNAVAILABLE) {
-            state = "Protection unavailable";
-        } else if (enabled && mode == AutoBrightnessManager.Mode.USER_HOLD) {
-            state = "Holding your brightness";
-        } else if (enabled && !ProtectionServiceHealth.isServiceHealthy(this)) {
-            state = "Protection limited";
-        } else if (enabled) {
-            state = "Protecting your screen";
-        } else {
-            state = "Protection off";
-        }
-
-        return state
-                + "\nLight: " + getLightText()
-                + "\nBrightness: " + percent + "%"
-                + "\nService: " + ProtectionServiceHealth.getMainHealthText(this)
-                + "\nLong-press for diagnostics";
-    }
-
-    private String getLightText() {
+        boolean sensor = AutoBrightnessManager.hasLightSensor(this);
+        boolean write = Settings.System.canWrite(this);
+        boolean notification = notificationsGranted();
+        boolean battery = batteryOptimizationIgnored();
         float lux = AutoBrightnessManager.getLastLux(this);
-        if (lux < 0f) {
-            return "unknown";
+        int raw = BrightnessLevels.getSystemRaw(this, -1);
+        int percent = raw < 0 ? -1 : BrightnessLevels.getPercentForRaw(raw);
+
+        if (!sensor || mode == AutoBrightnessManager.Mode.UNAVAILABLE) {
+            stateText.setText("Unavailable");
+        } else if (enabled && mode == AutoBrightnessManager.Mode.USER_HOLD) {
+            stateText.setText("Holding your brightness");
+        } else if (enabled) {
+            stateText.setText("Protecting your screen");
+        } else {
+            stateText.setText("Protection is off");
         }
-        return new ProtectionPolicy().getProfileName(lux);
+
+        String luxText = lux < 0f ? "Learning the room" : String.format(
+                java.util.Locale.US,
+                "%.1f lx · %s",
+                lux,
+                ProtectionCurveEngine.getProfileName(lux));
+        String brightnessText = raw < 0
+                ? "Brightness unavailable"
+                : "Brightness " + percent + "% · raw " + raw;
+        detailText.setText(
+                luxText
+                        + "\n" + brightnessText
+                        + "\n" + ProtectionServiceHealth.getMainHealthText(this)
+                        + (diagnosticsVisible
+                        ? "\n\n" + AutoBrightnessManager.getDiagnosticText(this)
+                        + "\n\n" + ProtectionServiceHealth.getDiagnosticText(this)
+                        : ""));
+
+        primaryButton.setText(enabled ? "Turn Protection Off" : "Turn Protection On");
+        primaryButton.setEnabled(sensor);
+        diagnosticsButton.setText(diagnosticsVisible ? "Hide diagnostics" : "Show diagnostics");
+
+        setupText.setText(
+                statusLine(write, "Brightness control", true)
+                        + statusLine(sensor, "Light sensor", true)
+                        + statusLine(notification, "Notifications", false)
+                        + statusLine(battery, "Unrestricted battery", false)
+                        + "Required items block startup; recommended items improve reliability.");
+        writeButton.setVisibility(write ? View.GONE : View.VISIBLE);
+        notificationButton.setVisibility(notification ? View.GONE : View.VISIBLE);
+        batteryButton.setVisibility(battery ? View.GONE : View.VISIBLE);
+        hyperOsButton.setVisibility(View.VISIBLE);
     }
 
-    private String getSetupMessage(boolean canWrite, boolean sensorOk, boolean notificationOk, boolean batteryOk, String setupState) {
-        if (!sensorOk) {
-            return "Light sensor unavailable";
-        }
-        if (!canWrite) {
-            return "Setup needed: allow modify system settings";
-        }
-        if (!notificationOk) {
-            return "Setup needed: allow notifications";
-        }
-        if (!batteryOk) {
-            return "Setup needed: allow unrestricted battery";
-        }
-        return "Setup: " + setupState;
+    private String statusLine(boolean ok, String label, boolean required) {
+        return (ok ? "✓ " : "• ") + label
+                + (ok ? " ready" : (required ? " required" : " recommended")) + "\n";
     }
 
-    private void toggleDiagnosticMode() {
-        diagnosticVisible = !diagnosticVisible;
-        BrightnessLogManager.appendSnapshot(this, diagnosticVisible ? "DIAGNOSTIC_MODE_ON" : "DIAGNOSTIC_MODE_OFF", AutoBrightnessManager.getLastLux(this));
-        Toast.makeText(this, diagnosticVisible ? "Diagnostic mode on" : "Diagnostic mode off", Toast.LENGTH_SHORT).show();
-        refreshStatus();
-    }
-
-    private String getSetupState(boolean canWrite, boolean sensorOk, boolean notificationOk, boolean batteryOk) {
-        if (!canWrite || !sensorOk) {
-            return "Blocked";
+    private void requestNotifications() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
         }
-        if (!notificationOk || !batteryOk) {
-            return "Limited";
-        }
-        return "Ready";
     }
 
-    private String setupLine(boolean ok, String label) {
-        return (ok ? "[OK] " : "[NEED] ") + label + "\n";
-    }
-
-    private boolean isNotificationPermissionGranted() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            return true;
-        }
-        return checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
-    }
-
-    private boolean isBatteryOptimizationIgnored() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return true;
-        }
-        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
-        return powerManager == null || powerManager.isIgnoringBatteryOptimizations(getPackageName());
-    }
-
-    private void openPermissionScreen() {
+    private void openWriteSettings() {
         Intent intent = new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS);
         intent.setData(Uri.parse("package:" + getPackageName()));
-        if (!tryStartActivity(intent)) {
-            openAppDetails();
-        }
+        if (!tryStart(intent)) openAppDetails();
     }
 
-    private void openNotificationSetup() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQUEST_POST_NOTIFICATIONS);
-            return;
+    private void openBatterySettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Intent direct = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            direct.setData(Uri.parse("package:" + getPackageName()));
+            if (tryStart(direct)) return;
+            if (tryStart(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))) return;
         }
-        openAppNotificationSettings();
-    }
-
-    private void openAppNotificationSettings() {
-        Intent intent;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
-            intent.putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
-        } else {
-            intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-            intent.setData(Uri.parse("package:" + getPackageName()));
-        }
-        if (!tryStartActivity(intent)) {
-            openAppDetails();
-        }
-    }
-
-    private void openBatterySetup() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            openAppDetails();
-            return;
-        }
-        if (!isBatteryOptimizationIgnored()) {
-            Intent requestIntent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-            requestIntent.setData(Uri.parse("package:" + getPackageName()));
-            if (tryStartActivity(requestIntent)) {
-                return;
-            }
-        }
-        Intent settingsIntent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
-        if (!tryStartActivity(settingsIntent)) {
-            openAppDetails();
-        }
-    }
-
-    private void openHyperOsSetup() {
-        Toast.makeText(this, "Enable Autostart, No restrictions, and lock the app in Recents.", Toast.LENGTH_LONG).show();
-        BrightnessLogManager.appendSnapshot(this, "OPEN_HYPEROS_BACKGROUND_SETUP", AutoBrightnessManager.getLastLux(this));
-
-        Intent miuiIntent = new Intent("miui.intent.action.APP_PERM_EDITOR");
-        miuiIntent.setComponent(new ComponentName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity"));
-        miuiIntent.putExtra("extra_pkgname", getPackageName());
-        if (tryStartActivity(miuiIntent)) {
-            return;
-        }
-
-        Intent miuiFallback = new Intent("miui.intent.action.APP_PERM_EDITOR");
-        miuiFallback.putExtra("extra_pkgname", getPackageName());
-        if (tryStartActivity(miuiFallback)) {
-            return;
-        }
-
         openAppDetails();
+    }
+
+    private void openHyperOsSettings() {
+        Intent[] intents = new Intent[] {
+                new Intent().setComponent(new ComponentName(
+                        "com.miui.securitycenter",
+                        "com.miui.permcenter.autostart.AutoStartManagementActivity")),
+                new Intent().setComponent(new ComponentName(
+                        "com.miui.powerkeeper",
+                        "com.miui.powerkeeper.ui.HiddenAppsConfigActivity")),
+                new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                        .setData(Uri.parse("package:" + getPackageName()))
+        };
+        for (Intent intent : intents) {
+            if (tryStart(intent)) return;
+        }
+        openAppDetails();
+    }
+
+    private void shareDiagnostics() {
+        String text = BrightnessLogManager.exportText(this)
+                + "\n\n" + AutoBrightnessManager.getDiagnosticText(this)
+                + "\n\n" + ProtectionServiceHealth.getDiagnosticText(this);
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(Intent.EXTRA_SUBJECT, "Screen Protection diagnostics");
+        send.putExtra(Intent.EXTRA_TEXT, text);
+        startActivity(Intent.createChooser(send, "Share diagnostics"));
+    }
+
+    private boolean notificationsGranted() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean batteryOptimizationIgnored() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true;
+        PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
+        return power == null || power.isIgnoringBatteryOptimizations(getPackageName());
     }
 
     private void openAppDetails() {
         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
         intent.setData(Uri.parse("package:" + getPackageName()));
-        tryStartActivity(intent);
+        tryStart(intent);
     }
 
-    private boolean tryStartActivity(Intent intent) {
+    private boolean tryStart(Intent intent) {
         try {
             startActivity(intent);
             return true;
-        } catch (ActivityNotFoundException e) {
-            return false;
-        } catch (Throwable t) {
+        } catch (ActivityNotFoundException | SecurityException ignored) {
             return false;
         }
     }
 
-    private void addButton(LinearLayout root, Button button, int heightDp) {
+    private LinearLayout card() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        card.setBackground(rounded(CARD, 20, 0xFFE9E4DC, 1));
+        return card;
+    }
+
+    private Button button(String label) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setTextSize(17);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
+        button.setTextColor(0xFFFFFFFF);
+        button.setAllCaps(false);
+        button.setBackground(rounded(ORANGE, 18, ORANGE, 0));
+        return button;
+    }
+
+    private Button secondaryButton(String label, View.OnClickListener listener) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setTextSize(14);
+        button.setTextColor(INK);
+        button.setAllCaps(false);
+        button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        button.setPadding(dp(14), 0, dp(14), 0);
+        button.setBackground(rounded(0xFFF6F2EC, 14, 0xFFE4DDD3, 1));
+        button.setOnClickListener(listener);
+        return button;
+    }
+
+    private TextView text(String value, int sp, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(sp);
+        view.setTextColor(color);
+        view.setLineSpacing(0f, 1.15f);
+        if (bold) view.setTypeface(Typeface.DEFAULT_BOLD);
+        return view;
+    }
+
+    private GradientDrawable rounded(int fill, int radiusDp, int stroke, int strokeDp) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(fill);
+        drawable.setCornerRadius(dp(radiusDp));
+        if (strokeDp > 0) drawable.setStroke(dp(strokeDp), stroke);
+        return drawable;
+    }
+
+    private LinearLayout.LayoutParams matchWrap() {
+        return new LinearLayout.LayoutParams(-1, -2);
+    }
+
+    private LinearLayout.LayoutParams matchHeight(int heightDp) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(heightDp));
-        params.setMargins(0, dp(8), 0, 0);
-        root.addView(button, params);
+        params.setMargins(0, dp(6), 0, 0);
+        return params;
     }
 
     private int dp(int value) {
