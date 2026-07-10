@@ -10,41 +10,60 @@ import java.util.Locale;
 
 public final class BrightnessLogManager {
     private static final String KEY_LOG = "brightness_debug_log";
-    private static final String KEY_LAST_SIGNATURE = "brightness_debug_last_signature";
     private static final int MAX_LOG_CHARS = 24000;
+
+    private static final Object LOCK = new Object();
+    private static final StringBuilder RAM_LOG = new StringBuilder();
+    private static String lastSignature = "";
+    private static boolean loaded;
+    private static boolean dirty;
 
     private BrightnessLogManager() {
     }
 
+    /**
+     * Sensor and transition hot paths never write SharedPreferences. Duplicate
+     * suppression and log accumulation stay in RAM until an explicit flush.
+     */
     public static void logSnapshotIfChanged(Context context, String event, float lux) {
         String signature = buildSignature(context, event, lux);
-        SharedPreferences prefs = getPrefs(context);
-        String lastSignature = prefs.getString(KEY_LAST_SIGNATURE, "");
-        if (signature.equals(lastSignature)) {
-            return;
+        synchronized (LOCK) {
+            ensureLoadedLocked(context);
+            if (signature.equals(lastSignature)) {
+                ProtectionBatteryStats.recordNormalLogSkip(context);
+                return;
+            }
+            lastSignature = signature;
+            appendEntryLocked(buildEntry(context, event, lux));
         }
-        prefs.edit().putString(KEY_LAST_SIGNATURE, signature).apply();
-        appendSnapshot(context, event, lux);
     }
 
     public static void appendSnapshot(Context context, String event, float lux) {
-        SharedPreferences prefs = getPrefs(context);
-        String oldLog = prefs.getString(KEY_LOG, "");
-        String entry = buildEntry(context, event, lux);
-        String newLog = oldLog + entry;
-        if (newLog.length() > MAX_LOG_CHARS) {
-            newLog = newLog.substring(newLog.length() - MAX_LOG_CHARS);
-            int firstLineBreak = newLog.indexOf('\n');
-            if (firstLineBreak >= 0 && firstLineBreak + 1 < newLog.length()) {
-                newLog = newLog.substring(firstLineBreak + 1);
-            }
+        synchronized (LOCK) {
+            ensureLoadedLocked(context);
+            appendEntryLocked(buildEntry(context, event, lux));
         }
-        prefs.edit().putString(KEY_LOG, newLog).apply();
+    }
+
+    /** Writes the accumulated diagnostics once, normally on service stop. */
+    public static void flush(Context context) {
+        synchronized (LOCK) {
+            ensureLoadedLocked(context);
+            if (!dirty) {
+                return;
+            }
+            getPrefs(context).edit().putString(KEY_LOG, RAM_LOG.toString()).apply();
+            dirty = false;
+        }
     }
 
     public static String exportText(Context context) {
         appendSnapshot(context, "EXPORT_LOG", AutoBrightnessManager.getLastLux(context));
-        String log = getPrefs(context).getString(KEY_LOG, "");
+        flush(context);
+        String log;
+        synchronized (LOCK) {
+            log = RAM_LOG.toString();
+        }
         return "Redmi Screen Protection diagnostic log\n"
                 + "Device mode: " + getSystemModeText(context) + "\n"
                 + "Protection: " + (AutoBrightnessManager.isAutoEnabled(context) ? "on" : "off") + "\n"
@@ -57,10 +76,44 @@ public final class BrightnessLogManager {
     }
 
     public static void clear(Context context) {
-        getPrefs(context).edit()
-                .remove(KEY_LOG)
-                .remove(KEY_LAST_SIGNATURE)
-                .apply();
+        synchronized (LOCK) {
+            RAM_LOG.setLength(0);
+            lastSignature = "";
+            loaded = true;
+            dirty = false;
+        }
+        getPrefs(context).edit().remove(KEY_LOG).apply();
+    }
+
+    private static void ensureLoadedLocked(Context context) {
+        if (loaded) {
+            return;
+        }
+        String persisted = getPrefs(context).getString(KEY_LOG, "");
+        RAM_LOG.setLength(0);
+        RAM_LOG.append(persisted);
+        trimLocked();
+        loaded = true;
+        dirty = false;
+    }
+
+    private static void appendEntryLocked(String entry) {
+        RAM_LOG.append(entry);
+        trimLocked();
+        dirty = true;
+    }
+
+    private static void trimLocked() {
+        if (RAM_LOG.length() <= MAX_LOG_CHARS) {
+            return;
+        }
+        int removeCount = RAM_LOG.length() - MAX_LOG_CHARS;
+        int firstLineBreak = RAM_LOG.indexOf("\n", removeCount);
+        if (firstLineBreak >= 0 && firstLineBreak + 1 < RAM_LOG.length()) {
+            RAM_LOG.delete(0, firstLineBreak + 1);
+        } else {
+            RAM_LOG.delete(0, removeCount);
+        }
     }
 
     private static String buildSignature(Context context, String event, float lux) {
@@ -111,7 +164,9 @@ public final class BrightnessLogManager {
     }
 
     private static String getSystemModeText(Context context) {
-        return getSystemMode(context) == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC ? "automatic" : "manual";
+        return getSystemMode(context) == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
+                ? "automatic"
+                : "manual";
     }
 
     private static String formatLux(float lux) {
