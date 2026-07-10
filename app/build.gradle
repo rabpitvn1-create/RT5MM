@@ -15,3 +15,7 @@ android {
         manifestPlaceholders = [settingsPermission: 'android.permission.WRITE_' + 'SETTINGS']
     }
 }
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}
