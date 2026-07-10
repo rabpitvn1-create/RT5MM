@@ -66,6 +66,8 @@ public final class AutoBrightnessManager implements SensorEventListener {
         OFF, PROTECTING, USER_HOLD, UNAVAILABLE
     }
 
+    private static volatile float liveLux = -1f;
+
     private final Context appContext;
     private final SensorManager sensorManager;
     private final Sensor lightSensor;
@@ -82,6 +84,9 @@ public final class AutoBrightnessManager implements SensorEventListener {
     private long lastLuxPersistElapsed;
     private long lastDiagnosticPersistElapsed;
     private String lastDiagnosticSignature = "";
+    private String lastDecisionSignature = "";
+    private long lastDecisionPersistElapsed;
+    private ProtectionSamplingController.Mode registeredSamplingMode;
     private int pendingExternalRaw = -1;
     private long pendingExternalSinceElapsed = -1L;
     private long occlusionSinceElapsed = -1L;
@@ -91,8 +96,9 @@ public final class AutoBrightnessManager implements SensorEventListener {
         sensorManager = (SensorManager) appContext.getSystemService(Context.SENSOR_SERVICE);
         lightSensor = sensorManager == null ? null : sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
         transitionEngine = new ProtectionTransitionEngine(appContext, handler);
-        lastPersistedLux = getLastLux(appContext);
+        lastPersistedLux = prefs(appContext).getFloat(KEY_LAST_LUX, -1f);
         lastRamLux = lastPersistedLux;
+        if (lastPersistedLux >= 0f) liveLux = lastPersistedLux;
         saveSensorAvailable(appContext, lightSensor != null);
         samplingController.reset(SystemClock.elapsedRealtime());
     }
@@ -108,6 +114,10 @@ public final class AutoBrightnessManager implements SensorEventListener {
             return false;
         }
         if (!BrightnessLevels.captureAndForceManualMode(appContext)) {
+            prefs(appContext).edit()
+                    .putBoolean(KEY_AUTO_ENABLED, false)
+                    .putString(KEY_AUTO_MODE, Mode.OFF.name())
+                    .apply();
             BrightnessLogManager.appendSnapshot(appContext, "WRITE_SETTINGS_UNAVAILABLE", getBestLux());
             return false;
         }
@@ -264,14 +274,19 @@ public final class AutoBrightnessManager implements SensorEventListener {
         persistAmbientDiagnostics(result, now, result.action != ProtectionAmbientController.Action.HOLD);
 
         float observedLux = result.fastLux >= 0f ? result.fastLux : guardedLux;
-        if (pendingExternalRaw >= 0 || handleUserHoldObservation(observedLux, now)) {
+        boolean holdConsumedSample = handleUserHoldObservation(observedLux, now);
+        if (pendingExternalRaw >= 0 || holdConsumedSample) {
+            boolean holdStillActive = pendingExternalRaw >= 0
+                    || getUserHoldRemainingMs(appContext) > 0L;
             applySamplingMode(
-                    samplingController.onAmbientResult(now, result.action, result.reason, true),
-                    "USER_HOLD_ECO");
+                    samplingController.onAmbientResult(
+                            now, result.action, result.reason, holdStillActive),
+                    holdStillActive ? "USER_HOLD_ECO" : "USER_HOLD_RELEASE");
             return;
         }
 
         lastRamLux = result.ambientValid ? result.ambientLux : observedLux;
+        liveLux = lastRamLux;
         ProtectionSamplingController.Mode desiredMode = samplingController.onAmbientResult(
                 now, result.action, result.reason, false);
 
@@ -281,7 +296,8 @@ public final class AutoBrightnessManager implements SensorEventListener {
             applyIntermediate(result, currentRaw, false);
         } else if (result.ambientChanged()) {
             lastRamLux = result.ambientLux;
-            persistLuxIfNeeded(result.ambientLux, now, true);
+            liveLux = lastRamLux;
+            persistLuxIfNeeded(result.ambientLux, now, lastPersistedLux < 0f);
             evaluateConfirmedAmbient(result.ambientLux, "AMBIENT_" + result.action.name());
         } else {
             ProtectionBatteryStats.recordThrottledEvaluation(appContext);
@@ -342,6 +358,7 @@ public final class AutoBrightnessManager implements SensorEventListener {
         }
 
         lastRamLux = observedLux;
+        liveLux = observedLux;
         saveMode(appContext, Mode.USER_HOLD);
         ProtectionBatteryStats.setPowerState(
                 appContext, ProtectionPowerState.USER_HOLD_LOW_POWER, "USER_HOLD_ACTIVE");
@@ -368,7 +385,7 @@ public final class AutoBrightnessManager implements SensorEventListener {
                 appContext, ProtectionCurveEngine.getTargetRaw(ambientLux));
         BrightnessDecisionEngine.Decision decision =
                 decisionEngine.decideConfirmedAmbient(ambientLux, currentRaw, false);
-        saveDecision(decision, event);
+        saveDecision(decision, event, SystemClock.elapsedRealtime());
 
         if (decision.shouldApply()) {
             if (Math.abs(currentRaw - decision.targetRaw) <= RAW_HYSTERESIS) {
@@ -408,7 +425,12 @@ public final class AutoBrightnessManager implements SensorEventListener {
             markUnavailable(appContext);
             return false;
         }
-        if (registered) sensorManager.unregisterListener(this);
+        if (registered) {
+            sensorManager.unregisterListener(this);
+            ProtectionBatteryStats.recordSensorUnregistered(appContext);
+        }
+        registered = false;
+        registeredSamplingMode = null;
         try {
             registered = sensorManager.registerListener(
                     this,
@@ -424,6 +446,7 @@ public final class AutoBrightnessManager implements SensorEventListener {
             ProtectionBatteryStats.recordSensorRegistered(appContext);
             ProtectionBatteryStats.setPowerState(
                     appContext, ProtectionPowerState.ACTIVE_SCREEN_ON, event);
+            registeredSamplingMode = mode;
             prefs(appContext).edit().putString(KEY_SAMPLING_MODE, mode.name()).apply();
         }
         BrightnessLogManager.appendSnapshot(
@@ -443,12 +466,12 @@ public final class AutoBrightnessManager implements SensorEventListener {
             BrightnessLogManager.appendSnapshot(appContext, event, getBestLux());
         }
         registered = false;
+        registeredSamplingMode = null;
     }
 
     private void applySamplingMode(ProtectionSamplingController.Mode desired, String reason) {
         if (!screenAwake || desired == ProtectionSamplingController.Mode.SCREEN_OFF_SLEEP) return;
-        String persisted = prefs(appContext).getString(KEY_SAMPLING_MODE, "");
-        if (desired.name().equals(persisted) && registered) return;
+        if (registered && desired == registeredSamplingMode) return;
         registerSensor(desired, "SAMPLING_" + desired.name() + "_" + safe(reason));
     }
 
@@ -475,10 +498,11 @@ public final class AutoBrightnessManager implements SensorEventListener {
                 + "|" + Math.round(result.ambientLux)
                 + "|" + Math.round(result.fastLux)
                 + "|" + Math.round(result.slowLux);
-        if (!force && signature.equals(lastDiagnosticSignature)
+        if (lastDiagnosticPersistElapsed > 0L
                 && nowElapsed - lastDiagnosticPersistElapsed < DIAGNOSTIC_PERSIST_INTERVAL_MS) {
             return;
         }
+        if (!force && signature.equals(lastDiagnosticSignature)) return;
         lastDiagnosticSignature = signature;
         lastDiagnosticPersistElapsed = nowElapsed;
         prefs(appContext).edit()
@@ -491,7 +515,17 @@ public final class AutoBrightnessManager implements SensorEventListener {
                 .apply();
     }
 
-    private void saveDecision(BrightnessDecisionEngine.Decision decision, String event) {
+    private void saveDecision(
+            BrightnessDecisionEngine.Decision decision,
+            String event,
+            long nowElapsed) {
+        String signature = decision.action.name() + "|" + decision.reason + "|" + decision.targetRaw;
+        if (signature.equals(lastDecisionSignature)
+                && nowElapsed - lastDecisionPersistElapsed < 10_000L) {
+            return;
+        }
+        lastDecisionSignature = signature;
+        lastDecisionPersistElapsed = nowElapsed;
         prefs(appContext).edit()
                 .putLong(KEY_LAST_DECISION_AT, System.currentTimeMillis())
                 .putString(KEY_LAST_DECISION_ACTION, decision.action.name())
@@ -529,15 +563,23 @@ public final class AutoBrightnessManager implements SensorEventListener {
     public static void setAutoEnabled(Context context, boolean enabled) {
         Context app = context.getApplicationContext();
         boolean wasEnabled = isAutoEnabled(app);
+
+        if (enabled && !BrightnessLevels.captureAndForceManualMode(app)) {
+            prefs(app).edit()
+                    .putBoolean(KEY_AUTO_ENABLED, false)
+                    .putString(KEY_AUTO_MODE, Mode.OFF.name())
+                    .apply();
+            ProtectionBatteryStats.setPowerState(
+                    app, ProtectionPowerState.OFF, "WRITE_SETTINGS_UNAVAILABLE");
+            return;
+        }
+
         if (wasEnabled == enabled) {
-            if (enabled) {
-                BrightnessLevels.captureAndForceManualMode(app);
-            }
+            if (enabled && getSavedMode(app) == Mode.OFF) saveMode(app, Mode.PROTECTING);
             return;
         }
 
         if (enabled) {
-            BrightnessLevels.captureAndForceManualMode(app);
             ProtectionBatteryStats.reset(app);
         } else {
             ProtectionBatteryStats.flush(app);
@@ -607,7 +649,8 @@ public final class AutoBrightnessManager implements SensorEventListener {
     }
 
     public static float getLastLux(Context context) {
-        return prefs(context).getFloat(KEY_LAST_LUX, -1f);
+        float current = liveLux;
+        return current >= 0f ? current : prefs(context).getFloat(KEY_LAST_LUX, -1f);
     }
 
     public static void markUnavailable(Context context) {
@@ -696,18 +739,27 @@ public final class AutoBrightnessManager implements SensorEventListener {
     }
 
     private static void saveLastAutoRaw(Context context, int raw) {
-        prefs(context).edit()
+        SharedPreferences state = prefs(context);
+        int previousRaw = state.getInt(KEY_LAST_AUTO_RAW, -1);
+        long previousAt = state.getLong(KEY_LAST_AUTO_AT, 0L);
+        long now = System.currentTimeMillis();
+        if (previousRaw == raw && now - previousAt < 60_000L) return;
+        state.edit()
                 .putInt(KEY_LAST_AUTO_RAW, raw)
-                .putLong(KEY_LAST_AUTO_AT, System.currentTimeMillis())
+                .putLong(KEY_LAST_AUTO_AT, now)
                 .apply();
     }
 
     private static void saveSensorAvailable(Context context, boolean available) {
-        prefs(context).edit().putBoolean(KEY_SENSOR_AVAILABLE, available).apply();
+        SharedPreferences state = prefs(context);
+        if (state.getBoolean(KEY_SENSOR_AVAILABLE, !available) == available) return;
+        state.edit().putBoolean(KEY_SENSOR_AVAILABLE, available).apply();
     }
 
     private static void saveMode(Context context, Mode mode) {
-        prefs(context).edit().putString(KEY_AUTO_MODE, mode.name()).apply();
+        SharedPreferences state = prefs(context);
+        if (mode.name().equals(state.getString(KEY_AUTO_MODE, ""))) return;
+        state.edit().putString(KEY_AUTO_MODE, mode.name()).apply();
     }
 
     private static String formatLux(float lux) {
