@@ -28,7 +28,7 @@ public class AutoBrightnessService extends Service {
     private static final String CHANNEL_NAME = "Screen Protection";
     private static final int NOTIFICATION_ID = 3001;
     private static final long NOTIFICATION_REFRESH_MS = 60000L;
-    private static final long PROTECTION_UPDATE_MS = 15000L;
+    private static final long HEALTH_UPDATE_MS = 30000L;
     private static final long MANUAL_BRIGHTNESS_CONFIRM_MS = 3200L;
 
     private AutoBrightnessManager manager;
@@ -60,7 +60,10 @@ public class AutoBrightnessService extends Service {
             }
             if (Intent.ACTION_SCREEN_ON.equals(action) || Intent.ACTION_USER_PRESENT.equals(action)) {
                 BrightnessLevels.captureAndForceManualMode(AutoBrightnessService.this);
-                manager.onScreenWake(Intent.ACTION_USER_PRESENT.equals(action) ? "PROTECTION_USER_PRESENT" : "PROTECTION_SCREEN_ON");
+                manager.onScreenWake(
+                        Intent.ACTION_USER_PRESENT.equals(action)
+                                ? "PROTECTION_USER_PRESENT"
+                                : "PROTECTION_SCREEN_ON");
                 updateNotification(true);
                 scheduleProtectionUpdates();
             }
@@ -70,7 +73,9 @@ public class AutoBrightnessService extends Service {
     private final Runnable notificationRefreshRunnable = new Runnable() {
         @Override
         public void run() {
-            ProtectionServiceHealth.markHeartbeat(AutoBrightnessService.this, "NOTIFICATION_REFRESH");
+            ProtectionServiceHealth.markHeartbeat(
+                    AutoBrightnessService.this,
+                    "NOTIFICATION_REFRESH");
             updateNotification(false);
             if (handler != null && AutoBrightnessManager.isAutoEnabled(AutoBrightnessService.this)) {
                 handler.postDelayed(this, NOTIFICATION_REFRESH_MS);
@@ -78,19 +83,23 @@ public class AutoBrightnessService extends Service {
         }
     };
 
+    /**
+     * Health/notification heartbeat only. Brightness is never re-evaluated from
+     * persisted lux here; every write must originate from fresh sensor samples
+     * that pass ProtectionAmbientController.
+     */
     private final Runnable protectionUpdateRunnable = new Runnable() {
         @Override
         public void run() {
             if (handler == null || !AutoBrightnessManager.isAutoEnabled(AutoBrightnessService.this)) {
                 return;
             }
-            ProtectionServiceHealth.markHeartbeat(AutoBrightnessService.this, "PROTECTION_INTERVAL_TICK");
-            if (manager != null && !manager.isScreenOffSleep()) {
-                manager.evaluateLastLux("PROTECTION_INTERVAL_TICK");
-            }
+            ProtectionServiceHealth.markHeartbeat(
+                    AutoBrightnessService.this,
+                    "AMBIENT_HEALTH_TICK");
             updateNotification(false);
-            if (handler != null && manager != null && !manager.isScreenOffSleep()) {
-                handler.postDelayed(this, PROTECTION_UPDATE_MS);
+            if (manager != null && !manager.isScreenOffSleep()) {
+                handler.postDelayed(this, HEALTH_UPDATE_MS);
             }
         }
     };
@@ -151,7 +160,8 @@ public class AutoBrightnessService extends Service {
 
         if (ACTION_REFRESH.equals(action)) {
             if (!manager.isScreenOffSleep()) {
-                manager.evaluateLastLux("PROTECTION_REFRESH_REQUEST");
+                // Reassert sensor registration only. Do not map cached lux to brightness.
+                manager.start();
             }
             ProtectionServiceHealth.markHeartbeat(this, "PROTECTION_REFRESH_REQUEST");
             updateNotification(true);
@@ -188,7 +198,10 @@ public class AutoBrightnessService extends Service {
         Notification notification = buildNotification();
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+                startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
             } else {
                 startForeground(NOTIFICATION_ID, notification);
             }
@@ -214,7 +227,8 @@ public class AutoBrightnessService extends Service {
         }
         lastNotificationSignature = signature;
         try {
-            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            NotificationManager notificationManager =
+                    (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (notificationManager != null) {
                 notificationManager.notify(NOTIFICATION_ID, buildNotification());
             }
@@ -238,7 +252,10 @@ public class AutoBrightnessService extends Service {
 
         String luxText = formatLux(lux);
         String modeText = AutoBrightnessManager.getDisplayMode(mode);
-        String holdText = holdMs > 0L ? "Holding: " + (holdMs / 1000L) + "s" + (holdRaw >= 0 ? " / raw " + holdRaw : "") : "Holding: inactive";
+        String holdText = holdMs > 0L
+                ? "Holding: " + (holdMs / 1000L) + "s"
+                        + (holdRaw >= 0 ? " / raw " + holdRaw : "")
+                : "Holding: inactive";
 
         String contentText;
         String bigText;
@@ -251,7 +268,9 @@ public class AutoBrightnessService extends Service {
                     + "\n" + holdText;
         } else {
             int percent = BrightnessLevels.getCurrentPercent(this);
-            int raw = BrightnessLevels.getSystemRaw(this, BrightnessLevels.getRawForPercent(percent));
+            int raw = BrightnessLevels.getSystemRaw(
+                    this,
+                    BrightnessLevels.getRawForPercent(percent));
             contentText = "Lux: " + luxText + " · Raw: " + raw + " · " + powerState.name();
             bigText = "Screen Protection đang bật"
                     + "\nLux hiện tại: " + luxText
@@ -288,11 +307,13 @@ public class AutoBrightnessService extends Service {
         float lux = AutoBrightnessManager.getLastLux(this);
         ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(this);
         if (powerState == ProtectionPowerState.SCREEN_OFF_SLEEP) {
-            return mode.name() + "|" + powerState.name() + "|sleep|" + Math.round(lux) + "|" + holdBucket;
+            return mode.name() + "|" + powerState.name() + "|sleep|"
+                    + Math.round(lux) + "|" + holdBucket;
         }
         int percent = BrightnessLevels.getCurrentPercent(this);
         int raw = BrightnessLevels.getSystemRaw(this, -1);
-        return mode.name() + "|" + powerState.name() + "|" + percent + "|" + raw + "|" + Math.round(lux) + "|" + holdBucket;
+        return mode.name() + "|" + powerState.name() + "|" + percent + "|" + raw
+                + "|" + Math.round(lux) + "|" + holdBucket;
     }
 
     private void scheduleNotificationRefresh() {
@@ -311,7 +332,7 @@ public class AutoBrightnessService extends Service {
         if (manager == null || manager.isScreenOffSleep()) {
             return;
         }
-        handler.postDelayed(protectionUpdateRunnable, PROTECTION_UPDATE_MS);
+        handler.postDelayed(protectionUpdateRunnable, HEALTH_UPDATE_MS);
     }
 
     private void registerBrightnessObserver() {
@@ -329,8 +350,7 @@ public class AutoBrightnessService extends Service {
             getContentResolver().registerContentObserver(
                     Settings.System.getUriFor(Settings.System.SCREEN_BRIGHTNESS),
                     false,
-                    brightnessObserver
-            );
+                    brightnessObserver);
             brightnessObserverRegistered = true;
         } catch (Throwable ignored) {
             brightnessObserverRegistered = false;
@@ -370,7 +390,8 @@ public class AutoBrightnessService extends Service {
         @Override
         public void run() {
             if (manager != null && AutoBrightnessManager.isAutoEnabled(AutoBrightnessService.this)) {
-                manager.confirmPendingExternalBrightnessChange("USER_BRIGHTNESS_OBSERVER_CONFIRM");
+                manager.confirmPendingExternalBrightnessChange(
+                        "USER_BRIGHTNESS_OBSERVER_CONFIRM");
                 updateNotification(true);
             }
         }
@@ -448,11 +469,11 @@ public class AutoBrightnessService extends Service {
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_LOW
-        );
+                NotificationManager.IMPORTANCE_LOW);
         channel.setDescription("Keeps screen protection active while enabled.");
         channel.setShowBadge(false);
-        NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationManager notificationManager =
+                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (notificationManager != null) {
             notificationManager.createNotificationChannel(channel);
         }
