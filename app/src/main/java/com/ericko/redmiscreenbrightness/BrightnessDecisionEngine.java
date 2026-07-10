@@ -8,6 +8,12 @@ public final class BrightnessDecisionEngine {
     private static final int RAW_NOISE_RANGE = 6;
     private static final int SPIKE_RAW_DELTA = 4;
     private static final int SAME_TARGET_TOLERANCE_RAW = 0;
+    private static final int SUNLIGHT_MIN_TARGET_RAW = 31;
+    private static final int SUNLIGHT_MIN_RAW_DELTA = 10;
+    private static final int SUNLIGHT_RECENT_RAW_DELTA = 6;
+    private static final int SUNLIGHT_LOW_RESCUE_RAW = 24;
+    private static final int SUNLIGHT_MID_RESCUE_RAW = 31;
+    private static final float SUNLIGHT_MIN_LUX = 800f;
     private static final long CONFIRM_UP_FAST_MS = 1600L;
     private static final long CONFIRM_UP_SMALL_MS = 2600L;
     private static final long CONFIRM_DOWN_MS = 4800L;
@@ -19,26 +25,33 @@ public final class BrightnessDecisionEngine {
         NOOP,
         WAIT,
         IGNORE_SPIKE,
-        SENSOR_NOISY
+        SENSOR_NOISY,
+        SUNLIGHT_RESCUE
     }
 
     public static final class Decision {
         public final Action action;
         public final String reason;
         public final int targetRaw;
+        public final int rescueRaw;
         public final long waitMs;
         public final float confidence;
 
-        private Decision(Action action, String reason, int targetRaw, long waitMs, float confidence) {
+        private Decision(Action action, String reason, int targetRaw, int rescueRaw, long waitMs, float confidence) {
             this.action = action;
             this.reason = reason;
             this.targetRaw = targetRaw;
+            this.rescueRaw = rescueRaw;
             this.waitMs = waitMs;
             this.confidence = confidence;
         }
 
         public boolean shouldApply() {
             return action == Action.APPLY;
+        }
+
+        public boolean shouldRescue() {
+            return action == Action.SUNLIGHT_RESCUE;
         }
 
         public boolean isNoop() {
@@ -52,11 +65,13 @@ public final class BrightnessDecisionEngine {
     private int count = 0;
     private int index = 0;
     private int lastNoopBaselineRaw = -1;
+    private int lastSunlightRescueRaw = -1;
 
     public void reset() {
         count = 0;
         index = 0;
         lastNoopBaselineRaw = -1;
+        lastSunlightRescueRaw = -1;
         Arrays.fill(luxWindow, -1f);
         Arrays.fill(rawWindow, -1);
         Arrays.fill(timeWindow, 0L);
@@ -70,6 +85,14 @@ public final class BrightnessDecisionEngine {
         int delta = candidateRaw - currentRaw;
         int absDelta = Math.abs(delta);
         boolean deepNightCandidate = isDeepNightCandidate(candidateRaw);
+
+        if (!forceApply && shouldSunlightRescue(lux, latestRaw, currentRaw)) {
+            int rescueRaw = getSunlightRescueRaw(currentRaw, latestRaw);
+            if (rescueRaw > currentRaw && rescueRaw != lastSunlightRescueRaw) {
+                lastSunlightRescueRaw = rescueRaw;
+                return rescueDecision("SUNLIGHT_FAST_RESCUE_RAW_" + rescueRaw, latestRaw, rescueRaw, 0.70f);
+            }
+        }
 
         if (forceApply && !deepNightCandidate) {
             if (absDelta <= SAME_TARGET_TOLERANCE_RAW) {
@@ -139,7 +162,11 @@ public final class BrightnessDecisionEngine {
     }
 
     private Decision decision(Action action, String reason, int targetRaw, long waitMs, float confidence) {
-        return new Decision(action, reason, ProtectionCurveEngine.clampRaw(targetRaw), Math.max(0L, waitMs), clampConfidence(confidence));
+        return new Decision(action, reason, ProtectionCurveEngine.clampRaw(targetRaw), -1, Math.max(0L, waitMs), clampConfidence(confidence));
+    }
+
+    private Decision rescueDecision(String reason, int targetRaw, int rescueRaw, float confidence) {
+        return new Decision(Action.SUNLIGHT_RESCUE, reason, ProtectionCurveEngine.clampRaw(targetRaw), ProtectionCurveEngine.clampRaw(rescueRaw), 0L, clampConfidence(confidence));
     }
 
     private int getMedianRaw() {
@@ -184,6 +211,52 @@ public final class BrightnessDecisionEngine {
         int latestVsMedian = Math.abs(latestRaw - medianRaw);
         int medianVsCurrent = Math.abs(medianRaw - currentRaw);
         return latestVsMedian >= SPIKE_RAW_DELTA && medianVsCurrent <= 1;
+    }
+
+    private boolean shouldSunlightRescue(float lux, int latestRaw, int currentRaw) {
+        if (count < 2) {
+            return false;
+        }
+        if (ProtectionCurveEngine.isDeepNightRaw(latestRaw)) {
+            return false;
+        }
+        if (latestRaw - currentRaw < SUNLIGHT_MIN_RAW_DELTA) {
+            return false;
+        }
+        if (lux < SUNLIGHT_MIN_LUX && latestRaw < SUNLIGHT_MIN_TARGET_RAW) {
+            return false;
+        }
+        return hasRecentUpwardAgreement(currentRaw);
+    }
+
+    private boolean hasRecentUpwardAgreement(int currentRaw) {
+        int latest = getRecentRaw(0);
+        int previous = getRecentRaw(1);
+        return latest - currentRaw >= SUNLIGHT_MIN_RAW_DELTA
+                && previous - currentRaw >= SUNLIGHT_RECENT_RAW_DELTA
+                && latest >= SUNLIGHT_MIN_TARGET_RAW
+                && previous >= SUNLIGHT_MIN_TARGET_RAW - 4;
+    }
+
+    private int getRecentRaw(int offsetFromLatest) {
+        if (offsetFromLatest >= count) {
+            return -1;
+        }
+        int position = index - 1 - offsetFromLatest;
+        while (position < 0) {
+            position += WINDOW_SIZE;
+        }
+        return rawWindow[position % WINDOW_SIZE];
+    }
+
+    private int getSunlightRescueRaw(int currentRaw, int targetRaw) {
+        if (currentRaw < 16) {
+            return Math.min(targetRaw, SUNLIGHT_LOW_RESCUE_RAW);
+        }
+        if (currentRaw < 24) {
+            return Math.min(targetRaw, SUNLIGHT_MID_RESCUE_RAW);
+        }
+        return -1;
     }
 
     private int requiredAgreement(int absDelta, int candidateRaw) {
