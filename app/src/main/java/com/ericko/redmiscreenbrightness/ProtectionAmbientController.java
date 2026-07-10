@@ -94,7 +94,7 @@ public final class ProtectionAmbientController {
     private float slowLux = -1f;
     private float brighteningThreshold = Float.POSITIVE_INFINITY;
     private float darkeningThreshold = 0f;
-    private long firstSampleAt;
+    private long firstSampleAt = -1L;
     private long brighteningCandidateSince;
     private long darkeningCandidateSince;
     private long lastSunlightRescueAt;
@@ -108,7 +108,7 @@ public final class ProtectionAmbientController {
         slowLux = -1f;
         brighteningThreshold = Float.POSITIVE_INFINITY;
         darkeningThreshold = 0f;
-        firstSampleAt = 0L;
+        firstSampleAt = -1L;
         brighteningCandidateSince = 0L;
         darkeningCandidateSince = 0L;
         lastSunlightRescueAt = 0L;
@@ -117,7 +117,7 @@ public final class ProtectionAmbientController {
 
     public Result onLuxSample(long now, float lux, int currentRaw) {
         float safeLux = sanitizeLux(lux);
-        if (firstSampleAt == 0L) {
+        if (firstSampleAt < 0L) {
             firstSampleAt = now;
         }
 
