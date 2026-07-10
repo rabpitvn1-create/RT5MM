@@ -86,29 +86,29 @@ public final class ProtectionServiceHealth {
 
     public static String getMainHealthText(Context context) {
         if (!AutoBrightnessManager.isAutoEnabled(context)) {
-            return "idle";
+            return AppLanguage.get(context, R.string.health_idle);
         }
         SharedPreferences prefs = getPrefs(context);
         long heartbeatAt = prefs.getLong(KEY_SERVICE_HEARTBEAT_AT, 0L);
         boolean foreground = prefs.getBoolean(KEY_FOREGROUND_ACTIVE, false);
         ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(context);
         if (heartbeatAt <= 0L) {
-            return "starting";
+            return AppLanguage.get(context, R.string.health_starting);
         }
         if (!foreground) {
-            return "limited · foreground missing";
+            return AppLanguage.get(context, R.string.health_foreground_missing);
         }
         long ageMs = Math.max(0L, System.currentTimeMillis() - heartbeatAt);
         if (ageMs > getHeartbeatStaleMs(powerState)) {
-            return "limited · heartbeat " + formatAge(ageMs) + " ago";
+            return AppLanguage.get(context, R.string.health_heartbeat_old, formatAge(ageMs));
         }
         if (powerState == ProtectionPowerState.SCREEN_OFF_SLEEP) {
-            return "sleeping · sensor paused";
+            return AppLanguage.get(context, R.string.health_sleeping);
         }
         if (powerState == ProtectionPowerState.USER_HOLD_LOW_POWER) {
-            return "low power · user hold";
+            return AppLanguage.get(context, R.string.health_user_hold);
         }
-        return "running";
+        return AppLanguage.get(context, R.string.health_running);
     }
 
     public static String getDiagnosticText(Context context) {
