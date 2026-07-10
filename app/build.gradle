@@ -10,51 +10,10 @@ android {
         applicationId 'com.ericko.redmiscreenbrightness'
         minSdk 24
         targetSdk 35
-        versionCode 38
-        versionName '1.0.38'
+        versionCode 39
+        versionName '1.0.39'
         manifestPlaceholders = [settingsPermission: 'android.permission.WRITE_' + 'SETTINGS']
     }
-
-    sourceSets {
-        main {
-            res.srcDir("$buildDir/generated/iconRes")
-        }
-    }
-}
-
-def launcherIconParts = fileTree('src/main/icon-src') {
-    include 'original_launcher.webp.b64.part*'
-}
-def generatedLauncherIcon = file("$buildDir/generated/iconRes/drawable-nodpi/ic_launcher_original.webp")
-
-tasks.register('generateOriginalLauncherIcon') {
-    inputs.files(launcherIconParts)
-    outputs.file(generatedLauncherIcon)
-
-    doLast {
-        def parts = launcherIconParts.files.sort { a, b -> a.name <=> b.name }
-        if (parts.size() != 6) {
-            throw new GradleException("Expected 6 original launcher icon parts, found ${parts.size()}")
-        }
-
-        def encoded = parts.collect { it.getText('UTF-8').trim() }.join('')
-        byte[] decoded = java.util.Base64.getDecoder().decode(encoded)
-        generatedLauncherIcon.parentFile.mkdirs()
-        generatedLauncherIcon.bytes = decoded
-
-        def digest = java.security.MessageDigest.getInstance('SHA-256')
-                .digest(decoded)
-                .collect { String.format('%02x', it & 0xff) }
-                .join('')
-        def expected = 'ad9736d0d4a962087cb20a3f7e4f0af7b9dd6af23744836636215ee94fcc7228'
-        if (digest != expected) {
-            throw new GradleException("Original launcher icon checksum mismatch: ${digest}")
-        }
-    }
-}
-
-tasks.named('preBuild').configure {
-    dependsOn('generateOriginalLauncherIcon')
 }
 
 dependencies {
