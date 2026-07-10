@@ -27,8 +27,8 @@ public class AutoBrightnessService extends Service {
     private static final String CHANNEL_ID = "screen_protection_channel";
     private static final String CHANNEL_NAME = "Screen Protection";
     private static final int NOTIFICATION_ID = 3001;
-    private static final long NOTIFICATION_REFRESH_MS = 60000L;
-    private static final long HEALTH_UPDATE_MS = 30000L;
+    private static final long NOTIFICATION_REFRESH_MS = 15L * 60L * 1000L;
+    private static final long HEALTH_UPDATE_MS = 5L * 60L * 1000L;
     private static final long MANUAL_BRIGHTNESS_CONFIRM_MS = 3200L;
 
     private AutoBrightnessManager manager;
@@ -55,6 +55,7 @@ public class AutoBrightnessService extends Service {
                 if (handler != null) {
                     handler.removeCallbacks(protectionUpdateRunnable);
                 }
+                BrightnessLogManager.flush(AutoBrightnessService.this);
                 updateNotification(true);
                 return;
             }
@@ -160,7 +161,6 @@ public class AutoBrightnessService extends Service {
 
         if (ACTION_REFRESH.equals(action)) {
             if (!manager.isScreenOffSleep()) {
-                // Reassert sensor registration only. Do not map cached lux to brightness.
                 manager.start();
             }
             ProtectionServiceHealth.markHeartbeat(this, "PROTECTION_REFRESH_REQUEST");
@@ -184,6 +184,7 @@ public class AutoBrightnessService extends Service {
             manager = null;
         }
         ProtectionBatteryStats.flush(this);
+        BrightnessLogManager.flush(this);
         stopForegroundCompat();
         ProtectionServiceHealth.markServiceStopped(this, "SERVICE_DESTROYED");
         super.onDestroy();
@@ -411,6 +412,7 @@ public class AutoBrightnessService extends Service {
             manager = null;
         }
         ProtectionBatteryStats.flush(this);
+        BrightnessLogManager.flush(this);
         stopForegroundCompat();
         stopSelf();
     }
@@ -517,6 +519,7 @@ public class AutoBrightnessService extends Service {
         AutoBrightnessManager.setAutoEnabled(context, false);
         BrightnessLevels.restorePreviousBrightnessMode(context);
         ProtectionServiceHealth.markServiceStopped(context, "USER_STOP_REQUEST");
+        BrightnessLogManager.flush(context);
         Intent intent = new Intent(context, AutoBrightnessService.class);
         intent.setAction(ACTION_STOP);
         try {
