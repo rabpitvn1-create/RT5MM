@@ -10,8 +10,8 @@ android {
         applicationId 'com.ericko.redmiscreenbrightness'
         minSdk 24
         targetSdk 35
-        versionCode 40
-        versionName '1.0.40'
+        versionCode 41
+        versionName '1.0.41'
         manifestPlaceholders = [settingsPermission: 'android.permission.WRITE_' + 'SETTINGS']
     }
 
@@ -54,7 +54,7 @@ tasks.register('generateLauncherIcon') {
                 .digest(decoded)
                 .collect { String.format('%02x', it & 0xff) }
                 .join('')
-        def expected = 'f8ab6904f673576630b634713b4121726a8b7f87aa266675958b9b4ac5dc5c71'
+        def expected = '115c3d4c6542a88e8ea73af15d78d98e3df3b4b0c0b46890d89ce5f801c149fe'
         if (digest != expected) {
             throw new GradleException("Launcher icon checksum mismatch: ${digest}")
         }
