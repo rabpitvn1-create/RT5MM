@@ -7,30 +7,24 @@ import android.provider.Settings;
 
 public final class BrightnessLevels {
     public static final String PREFS = "brightness_state";
+
     private static final String KEY_PERCENT = "percent";
     private static final String KEY_PREVIOUS_BRIGHTNESS_MODE = "previous_system_brightness_mode";
     private static final String KEY_PREVIOUS_BRIGHTNESS_MODE_VALID = "previous_system_brightness_mode_valid";
-    private static final String KEY_IGNORE_EXTERNAL_UNTIL = "auto_brightness_ignore_external_until";
-    private static final long APP_WRITE_GRACE_MS = 12000L;
+    private static final String KEY_LAST_APP_WRITE_RAW = "last_app_brightness_write_raw";
+    private static final String KEY_LAST_APP_WRITE_AT = "last_app_brightness_write_at";
 
-    /*
-     * The only brightness levels used by the app.
-     * Keep these raw values conservative for Redmi/HyperOS to protect the screen,
-     * reduce eye strain, and save battery.
-     *
-     * The 5/8/10% buckets are reserved for confirmed deep-night behavior.
-     */
+    private static final long APP_WRITE_OBSERVER_WINDOW_MS = 2500L;
+
+    // Preserve the original calibrated Redmi raw anchors exactly.
     private static final int[] PERCENTS = new int[] {
             5, 8, 10, 12, 15, 18, 20, 23, 25, 28, 30, 33,
             35, 38, 40, 43, 45, 48, 50, 53, 55, 58, 60
     };
     private static final int[] RAW_VALUES = new int[] {
             4, 5, 6, 7, 8, 10, 11, 13, 14, 16, 17, 19,
-            21, 23, 25, 28, 31, 34, 37, 40, 43, 46, 49
+            21, 23, 26, 28, 31, 34, 38, 40, 43, 46, 49
     };
-
-    private static final int MIN_RAW = 1;
-    private static final int MAX_RAW = 255;
 
     private BrightnessLevels() {
     }
@@ -43,31 +37,31 @@ public final class BrightnessLevels {
     }
 
     public static int getSavedPercent(Context context) {
-        SharedPreferences prefs = context.getApplicationContext()
-                .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        return prefs.getInt(KEY_PERCENT, getMaxPercent());
+        return prefs(context).getInt(KEY_PERCENT, getMaxPercent());
     }
 
     public static void saveCurrentPercent(Context context, int percent) {
-        SharedPreferences prefs = context.getApplicationContext()
-                .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        prefs.edit().putInt(KEY_PERCENT, percent).apply();
+        prefs(context).edit().putInt(KEY_PERCENT, getNearestPercent(percent)).apply();
     }
 
+    /** Compatibility method retained for older callers. */
     public static void markAppBrightnessWriteGrace(Context context) {
-        context.getApplicationContext()
-                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putLong(KEY_IGNORE_EXTERNAL_UNTIL, System.currentTimeMillis() + APP_WRITE_GRACE_MS)
-                .apply();
+        int raw = getSystemRaw(context, -1);
+        if (raw >= 0) recordAppWrite(context, raw);
+    }
+
+    public static boolean isRecentAppWrite(Context context, int currentRaw) {
+        SharedPreferences state = prefs(context);
+        int writtenRaw = state.getInt(KEY_LAST_APP_WRITE_RAW, -1);
+        long writtenAt = state.getLong(KEY_LAST_APP_WRITE_AT, 0L);
+        long age = Math.max(0L, System.currentTimeMillis() - writtenAt);
+        return currentRaw == writtenRaw && writtenAt > 0L && age <= APP_WRITE_OBSERVER_WINDOW_MS;
     }
 
     public static int getNextPercent(int current) {
         int normalized = getNearestPercent(current);
         for (int i = 0; i < PERCENTS.length - 1; i++) {
-            if (PERCENTS[i] == normalized) {
-                return PERCENTS[i + 1];
-            }
+            if (PERCENTS[i] == normalized) return PERCENTS[i + 1];
         }
         return PERCENTS[0];
     }
@@ -75,9 +69,7 @@ public final class BrightnessLevels {
     public static int getRawForPercent(int percent) {
         int normalized = getNearestPercent(percent);
         for (int i = 0; i < PERCENTS.length; i++) {
-            if (PERCENTS[i] == normalized) {
-                return RAW_VALUES[i];
-            }
+            if (PERCENTS[i] == normalized) return RAW_VALUES[i];
         }
         return RAW_VALUES[0];
     }
@@ -87,16 +79,16 @@ public final class BrightnessLevels {
     }
 
     public static int getPercentForRaw(int raw) {
-        int bestIndex = 0;
-        int bestDistance = Math.abs(raw - RAW_VALUES[0]);
+        int best = 0;
+        int distance = Math.abs(raw - RAW_VALUES[0]);
         for (int i = 1; i < RAW_VALUES.length; i++) {
-            int distance = Math.abs(raw - RAW_VALUES[i]);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                bestIndex = i;
+            int candidate = Math.abs(raw - RAW_VALUES[i]);
+            if (candidate < distance) {
+                best = i;
+                distance = candidate;
             }
         }
-        return PERCENTS[bestIndex];
+        return PERCENTS[best];
     }
 
     public static int getPercentForRaw(Context context, int raw) {
@@ -106,10 +98,8 @@ public final class BrightnessLevels {
     public static int getSystemRaw(Context context, int fallbackRaw) {
         try {
             return Settings.System.getInt(
-                    context.getContentResolver(),
-                    Settings.System.SCREEN_BRIGHTNESS
-            );
-        } catch (Throwable t) {
+                    context.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS);
+        } catch (Throwable ignored) {
             return fallbackRaw;
         }
     }
@@ -119,66 +109,55 @@ public final class BrightnessLevels {
             return Settings.System.getInt(
                     context.getContentResolver(),
                     Settings.System.SCREEN_BRIGHTNESS_MODE,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-            );
-        } catch (Throwable t) {
+                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL);
+        } catch (Throwable ignored) {
             return Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL;
         }
     }
 
     public static boolean captureAndForceManualMode(Context context) {
+        if (!canWrite(context)) return false;
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.System.canWrite(context)) {
-                return false;
+            Context app = context.getApplicationContext();
+            SharedPreferences state = prefs(app);
+            int currentMode = getSystemBrightnessMode(app);
+            if (!state.getBoolean(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID, false)) {
+                state.edit()
+                        .putInt(KEY_PREVIOUS_BRIGHTNESS_MODE, currentMode)
+                        .putBoolean(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID, true)
+                        .apply();
             }
-            Context appContext = context.getApplicationContext();
-            SharedPreferences prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            int currentMode = getSystemBrightnessMode(appContext);
-            SharedPreferences.Editor editor = prefs.edit();
-            if (!prefs.getBoolean(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID, false)) {
-                editor.putInt(KEY_PREVIOUS_BRIGHTNESS_MODE, currentMode)
-                        .putBoolean(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID, true);
-            }
-            editor.apply();
-
             if (currentMode != Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL) {
-                Settings.System.putInt(
-                        appContext.getContentResolver(),
+                return Settings.System.putInt(
+                        app.getContentResolver(),
                         Settings.System.SCREEN_BRIGHTNESS_MODE,
-                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-                );
+                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL);
             }
             return true;
-        } catch (Throwable t) {
+        } catch (Throwable ignored) {
             return false;
         }
     }
 
     public static boolean restorePreviousBrightnessMode(Context context) {
+        if (!canWrite(context)) return false;
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.System.canWrite(context)) {
-                return false;
-            }
-            Context appContext = context.getApplicationContext();
-            SharedPreferences prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            if (!prefs.getBoolean(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID, false)) {
-                return true;
-            }
-            int previousMode = prefs.getInt(
+            Context app = context.getApplicationContext();
+            SharedPreferences state = prefs(app);
+            if (!state.getBoolean(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID, false)) return true;
+            int previous = state.getInt(
                     KEY_PREVIOUS_BRIGHTNESS_MODE,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-            );
-            Settings.System.putInt(
-                    appContext.getContentResolver(),
-                    Settings.System.SCREEN_BRIGHTNESS_MODE,
-                    previousMode
-            );
-            prefs.edit()
-                    .remove(KEY_PREVIOUS_BRIGHTNESS_MODE)
-                    .remove(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID)
-                    .apply();
-            return true;
-        } catch (Throwable t) {
+                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL);
+            boolean restored = Settings.System.putInt(
+                    app.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS_MODE, previous);
+            if (restored) {
+                state.edit()
+                        .remove(KEY_PREVIOUS_BRIGHTNESS_MODE)
+                        .remove(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID)
+                        .apply();
+            }
+            return restored;
+        } catch (Throwable ignored) {
             return false;
         }
     }
@@ -192,68 +171,66 @@ public final class BrightnessLevels {
     }
 
     public static boolean applyBrightness(Context context, int percent, int raw) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.System.canWrite(context)) {
-                return false;
-            }
-
-            int clampedRaw = clampRaw(raw);
-            int currentRaw = getSystemRaw(context, -1);
-            captureAndForceManualMode(context);
-
-            if (currentRaw != clampedRaw) {
-                Settings.System.putInt(
-                        context.getContentResolver(),
-                        Settings.System.SCREEN_BRIGHTNESS,
-                        clampedRaw
-                );
-            }
-
-            saveCurrentPercent(context, percent);
-            return true;
-        } catch (Throwable t) {
-            return false;
-        }
+        int safeRaw = Math.max(1, Math.min(255, raw));
+        boolean ok = writeRaw(context, safeRaw);
+        if (ok) saveCurrentPercent(context, percent);
+        return ok;
     }
 
     public static boolean applyProtectedRaw(Context context, int raw) {
+        int safeRaw = ProtectionCurveEngine.clampRaw(raw);
+        boolean ok = writeRaw(context, safeRaw);
+        if (ok) {
+            saveCurrentPercent(context, ProtectionCurveEngine.nearestProtectionPercentForRaw(safeRaw));
+        }
+        return ok;
+    }
+
+    private static boolean writeRaw(Context context, int raw) {
+        if (!canWrite(context)) return false;
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.System.canWrite(context)) {
-                return false;
+            Context app = context.getApplicationContext();
+            if (!captureAndForceManualMode(app)) return false;
+            int current = getSystemRaw(app, -1);
+            if (current == raw) {
+                recordAppWrite(app, raw);
+                return true;
             }
-            int clampedRaw = ProtectionCurveEngine.clampRaw(raw);
-            int currentRaw = getSystemRaw(context, -1);
-            captureAndForceManualMode(context);
-            if (currentRaw != clampedRaw) {
-                Settings.System.putInt(
-                        context.getContentResolver(),
-                        Settings.System.SCREEN_BRIGHTNESS,
-                        clampedRaw
-                );
-            }
-            saveCurrentPercent(context, ProtectionCurveEngine.nearestProtectionPercentForRaw(clampedRaw));
-            return true;
-        } catch (Throwable t) {
+            boolean ok = Settings.System.putInt(
+                    app.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, raw);
+            if (ok) recordAppWrite(app, raw);
+            return ok;
+        } catch (Throwable ignored) {
             return false;
         }
     }
 
-    private static int getNearestPercent(int percent) {
-        int bestIndex = 0;
-        int bestDistance = Math.abs(percent - PERCENTS[0]);
-        for (int i = 1; i < PERCENTS.length; i++) {
-            int distance = Math.abs(percent - PERCENTS[i]);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                bestIndex = i;
-            }
-        }
-        return PERCENTS[bestIndex];
+    private static void recordAppWrite(Context context, int raw) {
+        prefs(context).edit()
+                .putInt(KEY_LAST_APP_WRITE_RAW, raw)
+                .putLong(KEY_LAST_APP_WRITE_AT, System.currentTimeMillis())
+                .apply();
     }
 
-    private static int clampRaw(int raw) {
-        if (raw < MIN_RAW) return MIN_RAW;
-        if (raw > MAX_RAW) return MAX_RAW;
-        return raw;
+    private static boolean canWrite(Context context) {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.System.canWrite(context);
+    }
+
+    private static int getNearestPercent(int percent) {
+        int best = 0;
+        int distance = Math.abs(percent - PERCENTS[0]);
+        for (int i = 1; i < PERCENTS.length; i++) {
+            int candidate = Math.abs(percent - PERCENTS[i]);
+            if (candidate < distance) {
+                best = i;
+                distance = candidate;
+            }
+        }
+        return PERCENTS[best];
+    }
+
+    private static SharedPreferences prefs(Context context) {
+        return context.getApplicationContext()
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 }
