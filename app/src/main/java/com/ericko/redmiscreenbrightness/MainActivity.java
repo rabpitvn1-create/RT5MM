@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
@@ -53,6 +54,11 @@ public final class MainActivity extends Activity {
     };
 
     @Override
+    protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(AppLanguage.wrap(newBase));
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(buildContent());
@@ -87,24 +93,24 @@ public final class MainActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(22), dp(34), dp(22), dp(34));
+        root.setPadding(dp(22), dp(28), dp(22), dp(34));
         scroll.addView(root, new ScrollView.LayoutParams(-1, -2));
 
-        TextView brand = text("Xiaomi HyperOS", 14, ORANGE, true);
-        brand.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.addView(brand, matchWrap());
+        addLanguageSelector(root);
 
-        TextView title = text("Screen Protection", 30, INK, true);
+        TextView brand = text(getString(R.string.brand_name), 14, ORANGE, true);
+        brand.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout.LayoutParams brandParams = matchWrap();
+        brandParams.setMargins(0, dp(20), 0, 0);
+        root.addView(brand, brandParams);
+
+        TextView title = text(getString(R.string.app_name), 30, INK, true);
         title.setGravity(Gravity.CENTER_HORIZONTAL);
         LinearLayout.LayoutParams titleParams = matchWrap();
         titleParams.setMargins(0, dp(8), 0, dp(6));
         root.addView(title, titleParams);
 
-        TextView subtitle = text(
-                "Adaptive brightness tuned for comfort, stability and low battery use.",
-                14,
-                MUTED,
-                false);
+        TextView subtitle = text(getString(R.string.app_subtitle), 14, MUTED, false);
         subtitle.setGravity(Gravity.CENTER_HORIZONTAL);
         root.addView(subtitle, matchWrap());
 
@@ -132,23 +138,27 @@ public final class MainActivity extends Activity {
         setupCardParams.setMargins(0, dp(18), 0, 0);
         root.addView(setupCard, setupCardParams);
 
-        TextView setupTitle = text("Setup", 18, INK, true);
+        TextView setupTitle = text(getString(R.string.setup_title), 18, INK, true);
         setupCard.addView(setupTitle, matchWrap());
         setupText = text("", 14, MUTED, false);
         LinearLayout.LayoutParams setupParams = matchWrap();
         setupParams.setMargins(0, dp(8), 0, dp(8));
         setupCard.addView(setupText, setupParams);
 
-        writeButton = secondaryButton("Allow brightness control", v -> openWriteSettings());
-        notificationButton = secondaryButton("Allow notifications", v -> requestNotifications());
-        batteryButton = secondaryButton("Allow unrestricted battery", v -> openBatterySettings());
-        hyperOsButton = secondaryButton("Open HyperOS background settings", v -> openHyperOsSettings());
+        writeButton = secondaryButton(
+                getString(R.string.allow_brightness_control), v -> openWriteSettings());
+        notificationButton = secondaryButton(
+                getString(R.string.allow_notifications), v -> requestNotifications());
+        batteryButton = secondaryButton(
+                getString(R.string.allow_unrestricted_battery), v -> openBatterySettings());
+        hyperOsButton = secondaryButton(
+                getString(R.string.open_hyperos_background_settings), v -> openHyperOsSettings());
         setupCard.addView(writeButton, matchHeight(48));
         setupCard.addView(notificationButton, matchHeight(48));
         setupCard.addView(batteryButton, matchHeight(48));
         setupCard.addView(hyperOsButton, matchHeight(48));
 
-        diagnosticsButton = secondaryButton("Show diagnostics", v -> {
+        diagnosticsButton = secondaryButton(getString(R.string.show_diagnostics), v -> {
             diagnosticsVisible = !diagnosticsVisible;
             refresh();
         });
@@ -156,32 +166,70 @@ public final class MainActivity extends Activity {
         diagnosticParams.setMargins(0, dp(14), 0, 0);
         root.addView(diagnosticsButton, diagnosticParams);
 
-        Button shareButton = secondaryButton("Share diagnostic log", v -> shareDiagnostics());
+        Button shareButton = secondaryButton(
+                getString(R.string.share_diagnostic_log), v -> shareDiagnostics());
         root.addView(shareButton, matchHeight(50));
 
-        TextView footer = text(
-                "The app restores your previous Android brightness mode when protection is turned off.",
-                12,
-                MUTED,
-                false);
+        TextView footer = text(getString(R.string.footer_restore_mode), 12, MUTED, false);
         footer.setGravity(Gravity.CENTER_HORIZONTAL);
         LinearLayout.LayoutParams footerParams = matchWrap();
         footerParams.setMargins(0, dp(18), 0, 0);
         root.addView(footer, footerParams);
 
+        TextView creator = text(getString(R.string.created_by), 13, INK, true);
+        creator.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout.LayoutParams creatorParams = matchWrap();
+        creatorParams.setMargins(0, dp(14), 0, 0);
+        root.addView(creator, creatorParams);
+
         return scroll;
+    }
+
+    private void addLanguageSelector(LinearLayout root) {
+        TextView label = text(getString(R.string.language_title), 13, MUTED, true);
+        label.setGravity(Gravity.CENTER_HORIZONTAL);
+        root.addView(label, matchWrap());
+
+        boolean vietnamese = AppLanguage.isVietnamese(this);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams rowParams = matchHeight(44);
+        rowParams.setMargins(0, dp(7), 0, 0);
+        root.addView(row, rowParams);
+
+        Button viButton = languageButton(
+                getString(R.string.language_vietnamese), vietnamese,
+                v -> changeLanguage(AppLanguage.VIETNAMESE));
+        Button enButton = languageButton(
+                getString(R.string.language_english), !vietnamese,
+                v -> changeLanguage(AppLanguage.ENGLISH));
+
+        LinearLayout.LayoutParams halfLeft = new LinearLayout.LayoutParams(0, -1, 1f);
+        halfLeft.setMargins(0, 0, dp(4), 0);
+        LinearLayout.LayoutParams halfRight = new LinearLayout.LayoutParams(0, -1, 1f);
+        halfRight.setMargins(dp(4), 0, 0, 0);
+        row.addView(viButton, halfLeft);
+        row.addView(enButton, halfRight);
+    }
+
+    private void changeLanguage(String languageCode) {
+        if (languageCode.equals(AppLanguage.languageCode(this))) return;
+        AppLanguage.setLanguage(this, languageCode);
+        AutoBrightnessService.refresh(this);
+        recreate();
     }
 
     private void toggleProtection() {
         if (AutoBrightnessManager.isAutoEnabled(this)) {
             AutoBrightnessService.stop(this);
-            Toast.makeText(this, "Screen Protection off", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.toast_protection_off), Toast.LENGTH_SHORT).show();
             refresh();
             return;
         }
         if (!AutoBrightnessManager.hasLightSensor(this)) {
             AutoBrightnessManager.markUnavailable(this);
-            Toast.makeText(this, "Light sensor unavailable", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.toast_sensor_unavailable), Toast.LENGTH_LONG).show();
             refresh();
             return;
         }
@@ -192,11 +240,12 @@ public final class MainActivity extends Activity {
 
         AutoBrightnessService.start(this);
         if (!notificationsGranted()) requestNotifications();
-        Toast.makeText(this, "Screen Protection on", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.toast_protection_on), Toast.LENGTH_SHORT).show();
         refresh();
     }
 
     private void refresh() {
+        if (stateText == null) return;
         boolean enabled = AutoBrightnessManager.isAutoEnabled(this);
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
         boolean sensor = AutoBrightnessManager.hasLightSensor(this);
@@ -208,23 +257,21 @@ public final class MainActivity extends Activity {
         int percent = raw < 0 ? -1 : BrightnessLevels.getPercentForRaw(raw);
 
         if (!sensor || mode == AutoBrightnessManager.Mode.UNAVAILABLE) {
-            stateText.setText("Unavailable");
+            stateText.setText(R.string.state_unavailable);
         } else if (enabled && mode == AutoBrightnessManager.Mode.USER_HOLD) {
-            stateText.setText("Holding your brightness");
+            stateText.setText(R.string.state_holding);
         } else if (enabled) {
-            stateText.setText("Protecting your screen");
+            stateText.setText(R.string.state_protecting);
         } else {
-            stateText.setText("Protection is off");
+            stateText.setText(R.string.state_off);
         }
 
-        String luxText = lux < 0f ? "Learning the room" : String.format(
-                java.util.Locale.US,
-                "%.1f lx · %s",
-                lux,
-                ProtectionCurveEngine.getProfileName(lux));
+        String luxText = lux < 0f
+                ? getString(R.string.learning_room)
+                : getString(R.string.lux_profile_format, lux, AppLanguage.profileName(this, lux));
         String brightnessText = raw < 0
-                ? "Brightness unavailable"
-                : "Brightness " + percent + "% · raw " + raw;
+                ? getString(R.string.brightness_unavailable)
+                : getString(R.string.brightness_format, percent, raw);
         detailText.setText(
                 luxText
                         + "\n" + brightnessText
@@ -234,16 +281,18 @@ public final class MainActivity extends Activity {
                         + "\n\n" + ProtectionServiceHealth.getDiagnosticText(this)
                         : ""));
 
-        primaryButton.setText(enabled ? "Turn Protection Off" : "Turn Protection On");
+        primaryButton.setText(enabled
+                ? R.string.turn_protection_off : R.string.turn_protection_on);
         primaryButton.setEnabled(sensor);
-        diagnosticsButton.setText(diagnosticsVisible ? "Hide diagnostics" : "Show diagnostics");
+        diagnosticsButton.setText(diagnosticsVisible
+                ? R.string.hide_diagnostics : R.string.show_diagnostics);
 
         setupText.setText(
-                statusLine(write, "Brightness control", true)
-                        + statusLine(sensor, "Light sensor", true)
-                        + statusLine(notification, "Notifications", false)
-                        + statusLine(battery, "Unrestricted battery", false)
-                        + "Required items block startup; recommended items improve reliability.");
+                statusLine(write, getString(R.string.brightness_control), true)
+                        + statusLine(sensor, getString(R.string.light_sensor), true)
+                        + statusLine(notification, getString(R.string.notifications), false)
+                        + statusLine(battery, getString(R.string.unrestricted_battery), false)
+                        + getString(R.string.requirements_note));
         writeButton.setVisibility(write ? View.GONE : View.VISIBLE);
         notificationButton.setVisibility(notification ? View.GONE : View.VISIBLE);
         batteryButton.setVisibility(battery ? View.GONE : View.VISIBLE);
@@ -251,8 +300,10 @@ public final class MainActivity extends Activity {
     }
 
     private String statusLine(boolean ok, String label, boolean required) {
-        return (ok ? "✓ " : "• ") + label
-                + (ok ? " ready" : (required ? " required" : " recommended")) + "\n";
+        String state = ok
+                ? getString(R.string.status_ready)
+                : getString(required ? R.string.status_required : R.string.status_recommended);
+        return (ok ? "✓ " : "• ") + label + " · " + state + "\n";
     }
 
     private void requestNotifications() {
@@ -302,9 +353,9 @@ public final class MainActivity extends Activity {
                 + "\n\n" + ProtectionServiceHealth.getDiagnosticText(this);
         Intent send = new Intent(Intent.ACTION_SEND);
         send.setType("text/plain");
-        send.putExtra(Intent.EXTRA_SUBJECT, "Screen Protection diagnostics");
+        send.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.diagnostic_subject));
         send.putExtra(Intent.EXTRA_TEXT, text);
-        startActivity(Intent.createChooser(send, "Share diagnostics"));
+        startActivity(Intent.createChooser(send, getString(R.string.diagnostic_chooser)));
     }
 
     private boolean notificationsGranted() {
@@ -362,6 +413,25 @@ public final class MainActivity extends Activity {
         button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         button.setPadding(dp(14), 0, dp(14), 0);
         button.setBackground(rounded(0xFFF6F2EC, 14, 0xFFE4DDD3, 1));
+        button.setOnClickListener(listener);
+        return button;
+    }
+
+    private Button languageButton(
+            String label, boolean selected, View.OnClickListener listener) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setTextSize(14);
+        button.setTypeface(selected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+        button.setTextColor(selected ? 0xFFFFFFFF : INK);
+        button.setAllCaps(false);
+        button.setGravity(Gravity.CENTER);
+        button.setPadding(dp(8), 0, dp(8), 0);
+        button.setBackground(rounded(
+                selected ? ORANGE : 0xFFF6F2EC,
+                14,
+                selected ? ORANGE : 0xFFE4DDD3,
+                1));
         button.setOnClickListener(listener);
         return button;
     }
