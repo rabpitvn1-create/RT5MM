@@ -41,7 +41,10 @@ public final class BrightnessLevels {
     }
 
     public static void saveCurrentPercent(Context context, int percent) {
-        prefs(context).edit().putInt(KEY_PERCENT, getNearestPercent(percent)).apply();
+        int normalized = getNearestPercent(percent);
+        SharedPreferences state = prefs(context);
+        if (state.getInt(KEY_PERCENT, -1) == normalized) return;
+        state.edit().putInt(KEY_PERCENT, normalized).apply();
     }
 
     /** Compatibility method retained for older callers. */
