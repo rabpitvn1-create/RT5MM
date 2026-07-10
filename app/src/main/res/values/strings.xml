@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Redmi Screen Brightness</string>
-    <string name="status_granted">Permission granted. Add the tile to Control Center.</string>
-    <string name="status_missing">Permission missing. Grant modify system settings.</string>
+    <string name="app_name">Screen Protection</string>
+    <string name="status_granted">Brightness control is ready.</string>
+    <string name="status_missing">Allow brightness control to continue.</string>
 </resources>
