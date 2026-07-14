@@ -1,4 +1,4 @@
-# Screen Protection 2.0
+# Screen Protection 2.1
 
 A one-button adaptive-brightness controller built specifically for Redmi / HyperOS.
 
@@ -6,7 +6,7 @@ The app does not reuse Android's automatic-brightness output. While enabled, it 
 
 ## Release
 
-- Version: **2.0.0**
+- Version: **2.1.0**
 - Package: `com.ericko.redmiscreenbrightness`
 - Minimum Android: 7.0 / API 24
 - Target Android: API 35
@@ -68,12 +68,14 @@ Intermediate values use monotonic logarithmic interpolation. The protected curve
 The sampling policy is connected directly to Android sensor registration:
 
 - `FAST_TRACK`: 100 ms after wake or a meaningful ambient transition.
-- `ACTIVE_TRACK`: 300 ms while the environment is evolving.
-- `STABLE_ECO`: 850 ms after sustained stability.
-- `USER_HOLD_ECO`: 1.5 seconds while respecting a manual user brightness choice.
+- `ACTIVE_TRACK`: 400 ms while the environment is evolving.
+- `STABLE_ECO`: 1.5 seconds after sustained stability.
+- `USER_HOLD_ECO`: 3 seconds while respecting a manual user brightness choice.
 - `SCREEN_OFF_SLEEP`: sensor completely unregistered.
 
-Minimum mode dwell time prevents register/unregister thrashing.
+Minimum mode dwell time prevents register/unregister thrashing. An in-process
+software gate also enforces these intervals when a vendor sensor HAL delivers
+callbacks faster than the requested Android rate.
 
 ## Manual user intent
 
@@ -88,8 +90,10 @@ A real external brightness change is distinguished from an app write by matching
 
 - The light sensor is off whenever the display is off.
 - Sampling slows automatically in stable conditions.
+- System brightness is observer/write cached instead of querying SettingsProvider on every sensor sample.
 - Diagnostic logging is RAM-first and bounded.
-- Routine health wakeups do not calculate or write brightness.
+- Diagnostics are persisted at most once per minute during operation.
+- Notification and lifecycle health updates are event-driven; there are no periodic background wakeups.
 - Normal transitions use at most three writes.
 - Duplicate targets and raw differences of one step are skipped.
 - SharedPreferences writes are throttled and reserved for meaningful state.
@@ -106,10 +110,13 @@ Required:
 Recommended on HyperOS:
 
 - Notification permission on Android 13+.
-- Unrestricted battery use.
+- Review battery optimization settings if HyperOS stops the service.
 - Autostart / No restrictions / Lock in Recents when available.
 
 Notification and battery recommendations improve persistence but do not incorrectly block startup.
+
+The interface, foreground notification, Quick Settings tile and diagnostics are
+available in both English and Vietnamese through Android locale resources.
 
 ## Quick Settings and recovery
 

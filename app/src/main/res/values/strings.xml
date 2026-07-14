@@ -1,5 +1,113 @@
 <resources>
     <string name="app_name">Screen Protection</string>
-    <string name="status_granted">Brightness control is ready.</string>
-    <string name="status_missing">Allow brightness control to continue.</string>
+    <string name="brand_hyperos">Xiaomi HyperOS</string>
+    <string name="app_subtitle">Adaptive brightness tuned for comfort, stability and low battery use.</string>
+    <string name="app_footer">The app restores your previous Android brightness mode when protection is turned off.</string>
+
+    <string name="setup_title">Setup</string>
+    <string name="action_allow_brightness">Allow brightness control</string>
+    <string name="action_allow_notifications">Allow notifications</string>
+    <string name="action_open_battery_settings">Open battery optimization settings</string>
+    <string name="action_open_hyperos_settings">Open HyperOS background settings</string>
+    <string name="action_show_diagnostics">Show diagnostics</string>
+    <string name="action_hide_diagnostics">Hide diagnostics</string>
+    <string name="action_share_diagnostics">Share diagnostic log</string>
+    <string name="action_turn_protection_on">Turn Protection On</string>
+    <string name="action_turn_protection_off">Turn Protection Off</string>
+
+    <string name="state_unavailable">Unavailable</string>
+    <string name="state_user_hold">Holding your brightness</string>
+    <string name="state_protecting">Protecting your screen</string>
+    <string name="state_off">Protection is off</string>
+    <string name="learning_room">Learning the room</string>
+    <string name="learning_environment">Learning environment</string>
+    <string name="lux_profile_format">%1$.1f lx · %2$s</string>
+    <string name="brightness_unavailable">Brightness unavailable</string>
+    <string name="brightness_format">Brightness %1$d%% · raw %2$d</string>
+
+    <string name="setup_brightness_control">Brightness control</string>
+    <string name="setup_light_sensor">Light sensor</string>
+    <string name="setup_notifications">Notifications</string>
+    <string name="setup_battery_optimization">Battery optimization</string>
+    <string name="setup_item_ready">✓ %1$s — ready\n</string>
+    <string name="setup_item_required">• %1$s — required\n</string>
+    <string name="setup_item_recommended">• %1$s — recommended\n</string>
+    <string name="setup_note">Required items block startup; recommended items improve reliability.</string>
+
+    <string name="toast_protection_on">Screen Protection on</string>
+    <string name="toast_protection_off">Screen Protection off</string>
+    <string name="toast_sensor_unavailable">Light sensor unavailable</string>
+    <string name="toast_open_app_for_brightness">Open the app to allow brightness control</string>
+    <string name="diagnostics_share_subject">Screen Protection diagnostics</string>
+    <string name="diagnostics_share_chooser">Share diagnostics</string>
+
+    <string name="profile_unknown">unknown</string>
+    <string name="profile_deep_night">deep night</string>
+    <string name="profile_very_dim">very dim</string>
+    <string name="profile_indoor_dim">dim indoor</string>
+    <string name="profile_indoor">indoor</string>
+    <string name="profile_bright_indoor">bright indoor</string>
+    <string name="profile_outdoor">outdoor</string>
+
+    <string name="mode_protecting">Protecting</string>
+    <string name="mode_user_hold">Holding your brightness</string>
+    <string name="mode_unavailable">Unavailable</string>
+    <string name="mode_off">Off</string>
+    <string name="power_active">active</string>
+    <string name="power_sleeping">sleeping</string>
+    <string name="power_user_hold">low power · user hold</string>
+    <string name="power_recovery">recovering</string>
+    <string name="power_off">off</string>
+
+    <string name="health_idle">idle</string>
+    <string name="health_starting">starting</string>
+    <string name="health_foreground_missing">limited · foreground missing</string>
+    <string name="health_sleeping">sleeping · sensor paused</string>
+    <string name="health_user_hold">low power · user hold</string>
+    <string name="health_running">running</string>
+
+    <string name="notification_channel_name">Screen Protection</string>
+    <string name="notification_channel_description">Keeps Screen Protection active while enabled.</string>
+    <string name="notification_sleeping">Sleeping · light sensor paused</string>
+    <string name="notification_sleep_title">Screen Protection is sleeping to save battery</string>
+    <string name="notification_sensor_paused">Light sensor: paused until the screen turns on</string>
+    <string name="notification_last_environment">Last environment: %1$s</string>
+    <string name="notification_environment">Environment: %1$s</string>
+    <string name="notification_mode">Mode: %1$s</string>
+    <string name="notification_power">Power: %1$s</string>
+    <string name="notification_active_title">Screen Protection is active</string>
+    <string name="notification_raw_suffix"> · raw %1$d</string>
+    <string name="notification_brightness">Brightness: %1$d%% · raw %2$d</string>
+    <string name="notification_manual_hold">Manual brightness hold is active</string>
+
+    <string name="tile_tap_to_protect">Tap to protect</string>
+    <string name="tile_holding">Holding · %1$d%%</string>
+    <string name="tile_protected">Protected · %1$d%%</string>
+
+    <string name="value_on">On</string>
+    <string name="value_off">Off</string>
+    <string name="value_unknown">unknown</string>
+    <string name="value_none">none</string>
+    <string name="value_never">never</string>
+    <string name="value_running">running</string>
+    <string name="value_stopped">stopped</string>
+    <string name="value_active">active</string>
+    <string name="value_inactive">inactive</string>
+    <string name="value_registered">registered</string>
+    <string name="value_not_registered">not registered</string>
+    <string name="duration_ms">%1$d ms</string>
+    <string name="duration_seconds">%1$d s</string>
+    <string name="duration_minutes_seconds">%1$d min %2$02d s</string>
+    <string name="age_ago">%1$s ago</string>
+
+    <string name="protection_status_text">Protection: %1$s\nMode: %2$s\nEnvironment: %3$s\nLux: %4$s\nBrightness: raw %5$d\nSampling: %6$s</string>
+    <string name="auto_diagnostic_text">Diagnostic mode\nProtection: %1$s\nMode: %2$s\nPower: %3$s\nSampling: %4$s\nAccepted lux: %5$s / %6$s\nFast / slow: %7$s / %8$s\nThresholds: dark &lt; %9$s · bright &gt; %10$s\nAmbient: %11$s / %12$s\nCurrent: %13$d%% / raw %14$d\nTarget: %15$d%% / raw %16$d\nDecision: %17$s / %18$s\nConfidence: %19$d%%\nDecision age: %20$s\nUser hold: %21$d s</string>
+    <string name="battery_diagnostic_text">Battery layer\nPower state: %1$s\nLast power reason: %2$s\nLast power change: %3$s\nState transitions: %4$d\nScreen on/off: %5$d / %6$d\nSensor register/unregister: %7$d / %8$d\nSensor samples processed/dropped: %9$d / %10$d\nEvaluations: %11$d\nThrottled evaluations: %12$d\nLux persisted: %13$d\nDecisions: %14$d\nBrightness writes/skips: %15$d / %16$d\nNormal log skips: %17$d\nCounter storage: RAM hot path / flushed on stop</string>
+    <string name="service_diagnostic_text">Service health\nHealth: %1$s\nPower state: %2$s\nRuntime: %3$s\nLast lifecycle signal: %4$s\nLifecycle reason: %5$s\nForeground: %6$s / %7$s\nScreen receiver: %8$s\nCreated: %9$s\nStarted: %10$s\nStopped: %11$s\nStop reason: %12$s\nBoot restore: %13$s\nBoot action: %14$s</string>
+
+    <string name="system_mode_automatic">automatic</string>
+    <string name="system_mode_manual">manual</string>
+    <string name="log_export_header">Redmi Screen Protection diagnostic log\nDevice mode: %1$s\nProtection: %2$s\nApp mode: %3$s\nCurrent raw: %4$d\nCurrent bucket: %5$d%%\nLast lux: %6$s</string>
+    <string name="log_events">Events:</string>
+    <string name="log_no_events">No events yet.</string>
 </resources>

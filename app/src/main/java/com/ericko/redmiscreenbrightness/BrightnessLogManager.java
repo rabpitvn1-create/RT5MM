@@ -64,15 +64,20 @@ public final class BrightnessLogManager {
         synchronized (LOCK) {
             log = RAM_LOG.toString();
         }
-        return "Redmi Screen Protection diagnostic log\n"
-                + "Device mode: " + getSystemModeText(context) + "\n"
-                + "Protection: " + (AutoBrightnessManager.isAutoEnabled(context) ? "on" : "off") + "\n"
-                + "App mode: " + AutoBrightnessManager.getDisplayMode(AutoBrightnessManager.getSavedMode(context)) + "\n"
-                + "Current raw: " + BrightnessLevels.getSystemRaw(context, -1) + "\n"
-                + "Current bucket: " + BrightnessLevels.getCurrentPercent(context) + "%\n"
-                + "Last lux: " + formatLux(AutoBrightnessManager.getLastLux(context)) + "\n\n"
-                + "Events:\n"
-                + (log.length() == 0 ? "No events yet.\n" : log);
+        return context.getString(
+                R.string.log_export_header,
+                getSystemModeText(context),
+                context.getString(AutoBrightnessManager.isAutoEnabled(context)
+                        ? R.string.value_on : R.string.value_off),
+                AutoBrightnessManager.getDisplayMode(
+                        context, AutoBrightnessManager.getSavedMode(context)),
+                BrightnessLevels.getSystemRaw(context, -1),
+                BrightnessLevels.getCurrentPercent(context),
+                formatLux(context, AutoBrightnessManager.getLastLux(context)))
+                + "\n\n" + context.getString(R.string.log_events)
+                + "\n" + (log.length() == 0
+                        ? context.getString(R.string.log_no_events) + "\n"
+                        : log);
     }
 
     public static void clear(Context context) {
@@ -117,7 +122,7 @@ public final class BrightnessLogManager {
     }
 
     private static String buildSignature(Context context, String event, float lux) {
-        int raw = BrightnessLevels.getSystemRaw(context, -1);
+        int raw = BrightnessLevels.getCachedSystemRaw(context, -1);
         int mode = getSystemMode(context);
         AutoBrightnessManager.Mode appMode = AutoBrightnessManager.getSavedMode(context);
         boolean appAuto = AutoBrightnessManager.isAutoEnabled(context);
@@ -126,7 +131,7 @@ public final class BrightnessLogManager {
     }
 
     private static String buildEntry(Context context, String event, float lux) {
-        int raw = BrightnessLevels.getSystemRaw(context, -1);
+        int raw = BrightnessLevels.getCachedSystemRaw(context, -1);
         int percent = BrightnessLevels.getPercentForRaw(raw);
         boolean appAuto = AutoBrightnessManager.isAutoEnabled(context);
         String source;
@@ -144,9 +149,10 @@ public final class BrightnessLogManager {
                 + " | systemMode=" + getSystemModeText(context)
                 + " | raw=" + raw
                 + " | bucket=" + percent + "%"
-                + " | lux=" + formatLux(lux)
+                + " | lux=" + formatLux(context, lux)
                 + " | protection=" + (appAuto ? "on" : "off")
-                + " | appMode=" + AutoBrightnessManager.getDisplayMode(AutoBrightnessManager.getSavedMode(context))
+                + " | appMode=" + AutoBrightnessManager.getDisplayMode(
+                        context, AutoBrightnessManager.getSavedMode(context))
                 + " | cooldownMs=" + AutoBrightnessManager.getCooldownRemainingMs(context)
                 + "\n";
     }
@@ -165,13 +171,13 @@ public final class BrightnessLogManager {
 
     private static String getSystemModeText(Context context) {
         return getSystemMode(context) == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
-                ? "automatic"
-                : "manual";
+                ? context.getString(R.string.system_mode_automatic)
+                : context.getString(R.string.system_mode_manual);
     }
 
-    private static String formatLux(float lux) {
+    private static String formatLux(Context context, float lux) {
         if (lux < 0f) {
-            return "unknown";
+            return context.getString(R.string.value_unknown);
         }
         return String.format(Locale.US, "%.1f", lux);
     }

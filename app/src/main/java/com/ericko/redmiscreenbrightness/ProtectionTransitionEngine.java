@@ -52,7 +52,7 @@ public final class ProtectionTransitionEngine {
             String reason) {
         int safeRescue = ProtectionCurveEngine.clampRaw(requestedRescueRaw);
         int safeFinalTarget = ProtectionCurveEngine.clampRaw(requestedFinalTargetRaw);
-        int currentRaw = BrightnessLevels.getSystemRaw(appContext, safeRescue);
+        int currentRaw = BrightnessLevels.getCachedSystemRaw(appContext, safeRescue);
         if (safeRescue <= currentRaw) {
             BrightnessLogManager.logSnapshotIfChanged(
                     appContext,
@@ -87,7 +87,7 @@ public final class ProtectionTransitionEngine {
             String reason) {
         int safeSettle = ProtectionCurveEngine.clampRaw(requestedSettleRaw);
         int safeFinalTarget = ProtectionCurveEngine.clampRaw(requestedFinalTargetRaw);
-        int currentRaw = BrightnessLevels.getSystemRaw(appContext, safeSettle);
+        int currentRaw = BrightnessLevels.getCachedSystemRaw(appContext, safeSettle);
         if (safeSettle >= currentRaw) {
             BrightnessLogManager.logSnapshotIfChanged(
                     appContext,
@@ -118,7 +118,7 @@ public final class ProtectionTransitionEngine {
 
     public void transitionToRaw(int requestedTargetRaw, String reason) {
         int safeTarget = ProtectionCurveEngine.clampRaw(requestedTargetRaw);
-        int currentRaw = BrightnessLevels.getSystemRaw(appContext, safeTarget);
+        int currentRaw = BrightnessLevels.getCachedSystemRaw(appContext, safeTarget);
         if (currentRaw == safeTarget) {
             targetRaw = safeTarget;
             running = false;
@@ -162,7 +162,7 @@ public final class ProtectionTransitionEngine {
                 return;
             }
 
-            int currentRaw = BrightnessLevels.getSystemRaw(appContext, targetRaw);
+            int currentRaw = BrightnessLevels.getCachedSystemRaw(appContext, targetRaw);
             if (currentRaw == targetRaw) {
                 finishTransition();
                 return;

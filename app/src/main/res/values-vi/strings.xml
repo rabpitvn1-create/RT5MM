@@ -1,0 +1,113 @@
+<resources>
+    <string name="app_name">Bảo vệ màn hình</string>
+    <string name="brand_hyperos">Xiaomi HyperOS</string>
+    <string name="app_subtitle">Độ sáng thích ứng được tinh chỉnh để dễ chịu, ổn định và tiết kiệm pin.</string>
+    <string name="app_footer">Ứng dụng sẽ khôi phục chế độ sáng Android trước đó khi bạn tắt bảo vệ.</string>
+
+    <string name="setup_title">Thiết lập</string>
+    <string name="action_allow_brightness">Cho phép điều khiển độ sáng</string>
+    <string name="action_allow_notifications">Cho phép thông báo</string>
+    <string name="action_open_battery_settings">Mở cài đặt tối ưu pin</string>
+    <string name="action_open_hyperos_settings">Mở cài đặt chạy nền HyperOS</string>
+    <string name="action_show_diagnostics">Hiện chẩn đoán</string>
+    <string name="action_hide_diagnostics">Ẩn chẩn đoán</string>
+    <string name="action_share_diagnostics">Chia sẻ nhật ký chẩn đoán</string>
+    <string name="action_turn_protection_on">Bật bảo vệ</string>
+    <string name="action_turn_protection_off">Tắt bảo vệ</string>
+
+    <string name="state_unavailable">Không khả dụng</string>
+    <string name="state_user_hold">Đang giữ độ sáng bạn chọn</string>
+    <string name="state_protecting">Đang bảo vệ màn hình</string>
+    <string name="state_off">Bảo vệ đang tắt</string>
+    <string name="learning_room">Đang nhận biết môi trường</string>
+    <string name="learning_environment">Đang nhận biết môi trường</string>
+    <string name="lux_profile_format">%1$.1f lx · %2$s</string>
+    <string name="brightness_unavailable">Không đọc được độ sáng</string>
+    <string name="brightness_format">Độ sáng %1$d%% · raw %2$d</string>
+
+    <string name="setup_brightness_control">Điều khiển độ sáng</string>
+    <string name="setup_light_sensor">Cảm biến ánh sáng</string>
+    <string name="setup_notifications">Thông báo</string>
+    <string name="setup_battery_optimization">Tối ưu pin</string>
+    <string name="setup_item_ready">✓ %1$s — đã sẵn sàng\n</string>
+    <string name="setup_item_required">• %1$s — bắt buộc\n</string>
+    <string name="setup_item_recommended">• %1$s — nên bật\n</string>
+    <string name="setup_note">Mục bắt buộc ảnh hưởng việc khởi động; mục đề xuất giúp ứng dụng hoạt động ổn định hơn.</string>
+
+    <string name="toast_protection_on">Đã bật bảo vệ màn hình</string>
+    <string name="toast_protection_off">Đã tắt bảo vệ màn hình</string>
+    <string name="toast_sensor_unavailable">Không có cảm biến ánh sáng</string>
+    <string name="toast_open_app_for_brightness">Mở ứng dụng để cấp quyền điều khiển độ sáng</string>
+    <string name="diagnostics_share_subject">Chẩn đoán Bảo vệ màn hình</string>
+    <string name="diagnostics_share_chooser">Chia sẻ chẩn đoán</string>
+
+    <string name="profile_unknown">chưa xác định</string>
+    <string name="profile_deep_night">đêm rất tối</string>
+    <string name="profile_very_dim">rất tối</string>
+    <string name="profile_indoor_dim">trong nhà tối</string>
+    <string name="profile_indoor">trong nhà</string>
+    <string name="profile_bright_indoor">trong nhà sáng</string>
+    <string name="profile_outdoor">ngoài trời</string>
+
+    <string name="mode_protecting">Đang bảo vệ</string>
+    <string name="mode_user_hold">Đang giữ độ sáng bạn chọn</string>
+    <string name="mode_unavailable">Không khả dụng</string>
+    <string name="mode_off">Đã tắt</string>
+    <string name="power_active">đang hoạt động</string>
+    <string name="power_sleeping">đang ngủ</string>
+    <string name="power_user_hold">tiết kiệm pin · giữ độ sáng</string>
+    <string name="power_recovery">đang khôi phục</string>
+    <string name="power_off">đã tắt</string>
+
+    <string name="health_idle">đang nghỉ</string>
+    <string name="health_starting">đang khởi động</string>
+    <string name="health_foreground_missing">bị giới hạn · thiếu tiến trình nền trước</string>
+    <string name="health_sleeping">đang ngủ · cảm biến đã dừng</string>
+    <string name="health_user_hold">tiết kiệm pin · giữ độ sáng</string>
+    <string name="health_running">đang chạy</string>
+
+    <string name="notification_channel_name">Bảo vệ màn hình</string>
+    <string name="notification_channel_description">Duy trì Bảo vệ màn hình khi tính năng đang bật.</string>
+    <string name="notification_sleeping">Đang ngủ · cảm biến ánh sáng đã dừng</string>
+    <string name="notification_sleep_title">Bảo vệ màn hình đang ngủ để tiết kiệm pin</string>
+    <string name="notification_sensor_paused">Cảm biến ánh sáng: dừng đến khi màn hình bật</string>
+    <string name="notification_last_environment">Môi trường gần nhất: %1$s</string>
+    <string name="notification_environment">Môi trường: %1$s</string>
+    <string name="notification_mode">Chế độ: %1$s</string>
+    <string name="notification_power">Nguồn: %1$s</string>
+    <string name="notification_active_title">Bảo vệ màn hình đang hoạt động</string>
+    <string name="notification_raw_suffix"> · raw %1$d</string>
+    <string name="notification_brightness">Độ sáng: %1$d%% · raw %2$d</string>
+    <string name="notification_manual_hold">Đang giữ mức sáng bạn chọn</string>
+
+    <string name="tile_tap_to_protect">Chạm để bật bảo vệ</string>
+    <string name="tile_holding">Đang giữ · %1$d%%</string>
+    <string name="tile_protected">Đang bảo vệ · %1$d%%</string>
+
+    <string name="value_on">Bật</string>
+    <string name="value_off">Tắt</string>
+    <string name="value_unknown">chưa xác định</string>
+    <string name="value_none">không có</string>
+    <string name="value_never">chưa từng</string>
+    <string name="value_running">đang chạy</string>
+    <string name="value_stopped">đã dừng</string>
+    <string name="value_active">hoạt động</string>
+    <string name="value_inactive">không hoạt động</string>
+    <string name="value_registered">đã đăng ký</string>
+    <string name="value_not_registered">chưa đăng ký</string>
+    <string name="duration_ms">%1$d ms</string>
+    <string name="duration_seconds">%1$d giây</string>
+    <string name="duration_minutes_seconds">%1$d phút %2$02d giây</string>
+    <string name="age_ago">cách đây %1$s</string>
+
+    <string name="protection_status_text">Bảo vệ: %1$s\nChế độ: %2$s\nMôi trường: %3$s\nLux: %4$s\nĐộ sáng: raw %5$d\nLấy mẫu: %6$s</string>
+    <string name="auto_diagnostic_text">Chế độ chẩn đoán\nBảo vệ: %1$s\nChế độ: %2$s\nNguồn: %3$s\nLấy mẫu: %4$s\nLux đã nhận: %5$s / %6$s\nNhanh / chậm: %7$s / %8$s\nNgưỡng: tối &lt; %9$s · sáng &gt; %10$s\nMôi trường: %11$s / %12$s\nHiện tại: %13$d%% / raw %14$d\nMục tiêu: %15$d%% / raw %16$d\nQuyết định: %17$s / %18$s\nĐộ tin cậy: %19$d%%\nTuổi quyết định: %20$s\nGiữ thủ công: %21$d giây</string>
+    <string name="battery_diagnostic_text">Lớp tiết kiệm pin\nTrạng thái nguồn: %1$s\nLý do nguồn gần nhất: %2$s\nThay đổi nguồn gần nhất: %3$s\nSố lần chuyển trạng thái: %4$d\nBật/tắt màn hình: %5$d / %6$d\nĐăng ký/hủy cảm biến: %7$d / %8$d\nMẫu đã xử lý/bỏ qua: %9$d / %10$d\nLần đánh giá: %11$d\nĐánh giá bị giới hạn: %12$d\nLần lưu lux: %13$d\nQuyết định: %14$d\nGhi/bỏ qua độ sáng: %15$d / %16$d\nNhật ký thường đã bỏ qua: %17$d\nBộ đếm: xử lý trong RAM / lưu khi dừng</string>
+    <string name="service_diagnostic_text">Tình trạng dịch vụ\nSức khỏe: %1$s\nTrạng thái nguồn: %2$s\nTiến trình: %3$s\nTín hiệu vòng đời gần nhất: %4$s\nLý do vòng đời: %5$s\nNền trước: %6$s / %7$s\nBộ nhận màn hình: %8$s\nĐã tạo: %9$s\nĐã khởi động: %10$s\nĐã dừng: %11$s\nLý do dừng: %12$s\nKhôi phục sau khởi động: %13$s\nHành động khởi động: %14$s</string>
+
+    <string name="system_mode_automatic">tự động</string>
+    <string name="system_mode_manual">thủ công</string>
+    <string name="log_export_header">Nhật ký chẩn đoán Bảo vệ màn hình Redmi\nChế độ thiết bị: %1$s\nBảo vệ: %2$s\nChế độ ứng dụng: %3$s\nRaw hiện tại: %4$d\nMức hiện tại: %5$d%%\nLux gần nhất: %6$s</string>
+    <string name="log_events">Sự kiện:</string>
+    <string name="log_no_events">Chưa có sự kiện.</string>
+</resources>
