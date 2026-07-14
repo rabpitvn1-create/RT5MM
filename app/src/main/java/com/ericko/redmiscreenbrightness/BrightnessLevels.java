@@ -15,6 +15,7 @@ public final class BrightnessLevels {
     private static final String KEY_LAST_APP_WRITE_AT = "last_app_brightness_write_at";
 
     private static final long APP_WRITE_OBSERVER_WINDOW_MS = 2500L;
+    private static volatile int cachedSystemRaw = -1;
 
     // Preserve the original calibrated Redmi raw anchors exactly.
     private static final int[] PERCENTS = new int[] {
@@ -49,7 +50,7 @@ public final class BrightnessLevels {
 
     /** Compatibility method retained for older callers. */
     public static void markAppBrightnessWriteGrace(Context context) {
-        int raw = getSystemRaw(context, -1);
+        int raw = getCachedSystemRaw(context, -1);
         if (raw >= 0) recordAppWrite(context, raw);
     }
 
@@ -100,11 +101,24 @@ public final class BrightnessLevels {
 
     public static int getSystemRaw(Context context, int fallbackRaw) {
         try {
-            return Settings.System.getInt(
+            int raw = Settings.System.getInt(
                     context.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS);
+            cachedSystemRaw = raw;
+            return raw;
         } catch (Throwable ignored) {
+            if (fallbackRaw >= 0) cachedSystemRaw = fallbackRaw;
             return fallbackRaw;
         }
+    }
+
+    /** Returns the last observer/write-backed value without querying SettingsProvider. */
+    public static int getCachedSystemRaw(Context context, int fallbackRaw) {
+        int raw = cachedSystemRaw;
+        return raw >= 0 ? raw : getSystemRaw(context, fallbackRaw);
+    }
+
+    public static void updateCachedSystemRaw(int raw) {
+        if (raw >= 0) cachedSystemRaw = raw;
     }
 
     public static int getSystemBrightnessMode(Context context) {
@@ -196,12 +210,16 @@ public final class BrightnessLevels {
             if (!captureAndForceManualMode(app)) return false;
             int current = getSystemRaw(app, -1);
             if (current == raw) {
+                cachedSystemRaw = raw;
                 recordAppWrite(app, raw);
                 return true;
             }
             boolean ok = Settings.System.putInt(
                     app.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, raw);
-            if (ok) recordAppWrite(app, raw);
+            if (ok) {
+                cachedSystemRaw = raw;
+                recordAppWrite(app, raw);
+            }
             return ok;
         } catch (Throwable ignored) {
             return false;

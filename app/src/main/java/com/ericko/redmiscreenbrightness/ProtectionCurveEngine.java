@@ -1,5 +1,7 @@
 package com.ericko.redmiscreenbrightness;
 
+import android.content.Context;
+
 /**
  * Monotonic, conservative lux-to-raw curve for the Redmi/HyperOS panel.
  *
@@ -67,6 +69,18 @@ public final class ProtectionCurveEngine {
         if (lux <= 800f) return "indoor";
         if (lux <= 2600f) return "bright indoor";
         return "outdoor";
+    }
+
+    public static String getProfileName(Context context, float lux) {
+        if (Float.isNaN(lux) || Float.isInfinite(lux) || lux < 0f) {
+            return context.getString(R.string.profile_unknown);
+        }
+        if (lux <= 3f) return context.getString(R.string.profile_deep_night);
+        if (lux <= 25f) return context.getString(R.string.profile_very_dim);
+        if (lux <= 150f) return context.getString(R.string.profile_indoor_dim);
+        if (lux <= 800f) return context.getString(R.string.profile_indoor);
+        if (lux <= 2600f) return context.getString(R.string.profile_bright_indoor);
+        return context.getString(R.string.profile_outdoor);
     }
 
     public static String getBandLabel(float lux) {

@@ -3,8 +3,6 @@ package com.ericko.redmiscreenbrightness;
 import android.content.Context;
 import android.content.SharedPreferences;
 
-import java.util.Locale;
-
 public final class ProtectionServiceHealth {
     private static final String KEY_SERVICE_CREATED_AT = "protection_service_created_at";
     private static final String KEY_SERVICE_STARTED_AT = "protection_service_started_at";
@@ -17,10 +15,6 @@ public final class ProtectionServiceHealth {
     private static final String KEY_SCREEN_RECEIVER_REGISTERED = "protection_screen_receiver_registered";
     private static final String KEY_BOOT_RESTORE_AT = "protection_boot_restore_at";
     private static final String KEY_BOOT_RESTORE_ACTION = "protection_boot_restore_action";
-
-    private static final long ACTIVE_HEARTBEAT_STALE_MS = 30000L;
-    private static final long USER_HOLD_HEARTBEAT_STALE_MS = 120000L;
-    private static final long SLEEP_HEARTBEAT_STALE_MS = 10L * 60L * 1000L;
 
     private ProtectionServiceHealth() {
     }
@@ -80,35 +74,30 @@ public final class ProtectionServiceHealth {
 
     public static boolean isServiceHealthy(Context context) {
         return AutoBrightnessManager.isAutoEnabled(context)
-                && isHeartbeatFresh(context)
+                && AutoBrightnessService.isRunning()
                 && getPrefs(context).getBoolean(KEY_FOREGROUND_ACTIVE, false);
     }
 
     public static String getMainHealthText(Context context) {
         if (!AutoBrightnessManager.isAutoEnabled(context)) {
-            return "idle";
+            return context.getString(R.string.health_idle);
         }
         SharedPreferences prefs = getPrefs(context);
-        long heartbeatAt = prefs.getLong(KEY_SERVICE_HEARTBEAT_AT, 0L);
         boolean foreground = prefs.getBoolean(KEY_FOREGROUND_ACTIVE, false);
         ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(context);
-        if (heartbeatAt <= 0L) {
-            return "starting";
+        if (!AutoBrightnessService.isRunning()) {
+            return context.getString(R.string.health_starting);
         }
         if (!foreground) {
-            return "limited · foreground missing";
-        }
-        long ageMs = Math.max(0L, System.currentTimeMillis() - heartbeatAt);
-        if (ageMs > getHeartbeatStaleMs(powerState)) {
-            return "limited · heartbeat " + formatAge(ageMs) + " ago";
+            return context.getString(R.string.health_foreground_missing);
         }
         if (powerState == ProtectionPowerState.SCREEN_OFF_SLEEP) {
-            return "sleeping · sensor paused";
+            return context.getString(R.string.health_sleeping);
         }
         if (powerState == ProtectionPowerState.USER_HOLD_LOW_POWER) {
-            return "low power · user hold";
+            return context.getString(R.string.health_user_hold);
         }
-        return "running";
+        return context.getString(R.string.health_running);
     }
 
     public static String getDiagnosticText(Context context) {
@@ -121,58 +110,48 @@ public final class ProtectionServiceHealth {
         long bootRestoreAt = prefs.getLong(KEY_BOOT_RESTORE_AT, 0L);
         ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(context);
 
-        return "Service health"
-                + "\nHealth: " + getMainHealthText(context)
-                + "\nPower state: " + powerState.name()
-                + "\nHeartbeat fresh: " + (isHeartbeatFresh(context) ? "yes" : "no")
-                + "\nHeartbeat stale limit: " + getHeartbeatStaleMs(powerState) + "ms"
-                + "\nLast heartbeat: " + ageText(now, heartbeatAt)
-                + "\nHeartbeat reason: " + prefs.getString(KEY_SERVICE_HEARTBEAT_REASON, "none")
-                + "\nForeground: " + (prefs.getBoolean(KEY_FOREGROUND_ACTIVE, false) ? "active" : "inactive")
-                + " / " + prefs.getString(KEY_FOREGROUND_REASON, "none")
-                + "\nScreen receiver: " + (prefs.getBoolean(KEY_SCREEN_RECEIVER_REGISTERED, false) ? "registered" : "not registered")
-                + "\nCreated: " + ageText(now, createdAt)
-                + "\nStarted: " + ageText(now, startedAt)
-                + "\nStopped: " + ageText(now, stoppedAt)
-                + "\nStop reason: " + prefs.getString(KEY_SERVICE_STOP_REASON, "none")
-                + "\nBoot restore: " + ageText(now, bootRestoreAt)
-                + "\nBoot action: " + prefs.getString(KEY_BOOT_RESTORE_ACTION, "none");
+        String none = context.getString(R.string.value_none);
+        return context.getString(
+                R.string.service_diagnostic_text,
+                getMainHealthText(context),
+                AutoBrightnessManager.getPowerStateText(context, powerState),
+                context.getString(AutoBrightnessService.isRunning()
+                        ? R.string.value_running : R.string.value_stopped),
+                ageText(context, now, heartbeatAt),
+                prefs.getString(KEY_SERVICE_HEARTBEAT_REASON, none),
+                context.getString(prefs.getBoolean(KEY_FOREGROUND_ACTIVE, false)
+                        ? R.string.value_active : R.string.value_inactive),
+                prefs.getString(KEY_FOREGROUND_REASON, none),
+                context.getString(prefs.getBoolean(KEY_SCREEN_RECEIVER_REGISTERED, false)
+                        ? R.string.value_registered : R.string.value_not_registered),
+                ageText(context, now, createdAt),
+                ageText(context, now, startedAt),
+                ageText(context, now, stoppedAt),
+                prefs.getString(KEY_SERVICE_STOP_REASON, none),
+                ageText(context, now, bootRestoreAt),
+                prefs.getString(KEY_BOOT_RESTORE_ACTION, none));
     }
 
-    private static boolean isHeartbeatFresh(Context context) {
-        long heartbeatAt = getPrefs(context).getLong(KEY_SERVICE_HEARTBEAT_AT, 0L);
-        if (heartbeatAt <= 0L) {
-            return false;
-        }
-        ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(context);
-        return System.currentTimeMillis() - heartbeatAt <= getHeartbeatStaleMs(powerState);
-    }
-
-    private static long getHeartbeatStaleMs(ProtectionPowerState powerState) {
-        if (powerState == ProtectionPowerState.SCREEN_OFF_SLEEP) {
-            return SLEEP_HEARTBEAT_STALE_MS;
-        }
-        if (powerState == ProtectionPowerState.USER_HOLD_LOW_POWER) {
-            return USER_HOLD_HEARTBEAT_STALE_MS;
-        }
-        return ACTIVE_HEARTBEAT_STALE_MS;
-    }
-
-    private static String ageText(long now, long at) {
+    private static String ageText(Context context, long now, long at) {
         if (at <= 0L) {
-            return "never";
+            return context.getString(R.string.value_never);
         }
-        return formatAge(Math.max(0L, now - at)) + " ago";
+        return context.getString(
+                R.string.age_ago,
+                formatAge(context, Math.max(0L, now - at)));
     }
 
-    private static String formatAge(long ageMs) {
+    private static String formatAge(Context context, long ageMs) {
         if (ageMs < 1000L) {
-            return ageMs + "ms";
+            return context.getString(R.string.duration_ms, ageMs);
         }
         if (ageMs < 60000L) {
-            return (ageMs / 1000L) + "s";
+            return context.getString(R.string.duration_seconds, ageMs / 1000L);
         }
-        return String.format(Locale.US, "%dm %02ds", ageMs / 60000L, (ageMs / 1000L) % 60L);
+        return context.getString(
+                R.string.duration_minutes_seconds,
+                ageMs / 60000L,
+                (ageMs / 1000L) % 60L);
     }
 
     private static String safe(String value) {

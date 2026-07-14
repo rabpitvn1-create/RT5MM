@@ -84,4 +84,36 @@ public class ProtectionSamplingControllerTest {
         assertTrue(controller.shouldReregister(
                 ProtectionSamplingController.Mode.SCREEN_OFF_SLEEP, 1_100L));
     }
+
+    @Test
+    public void softwareGateRejectsVendorCallbacksFasterThanRequested() {
+        ProtectionSamplingController controller = new ProtectionSamplingController();
+        controller.reset(0L);
+
+        assertTrue(controller.shouldProcessSample(0L));
+        assertFalse(controller.shouldProcessSample(50L));
+        assertTrue(controller.shouldProcessSample(100L));
+
+        controller.onAmbientResult(
+                3_000L,
+                ProtectionAmbientController.Action.HOLD,
+                "AMBIENT_HYSTERESIS_HOLD",
+                false);
+        assertEquals(ProtectionSamplingController.Mode.ACTIVE_TRACK, controller.getMode());
+        assertFalse(controller.shouldProcessSample(300L));
+        assertTrue(controller.shouldProcessSample(500L));
+    }
+
+    @Test
+    public void screenWakeResetsSoftwareGateForImmediateFreshSample() {
+        ProtectionSamplingController controller = new ProtectionSamplingController();
+        controller.reset(1_000L);
+        assertTrue(controller.shouldProcessSample(1_000L));
+
+        controller.onScreenOff(1_050L);
+        assertFalse(controller.shouldProcessSample(1_100L));
+
+        controller.onScreenWake(2_000L);
+        assertTrue(controller.shouldProcessSample(2_000L));
+    }
 }
