@@ -6,6 +6,7 @@
 
     <string name="setup_title">Setup</string>
     <string name="action_allow_brightness">Allow brightness control</string>
+    <string name="action_allow_usage_access">Allow app-aware manual hold</string>
     <string name="action_allow_notifications">Allow notifications</string>
     <string name="action_open_battery_settings">Open battery optimization settings</string>
     <string name="action_open_hyperos_settings">Open HyperOS background settings</string>
@@ -27,12 +28,13 @@
 
     <string name="setup_brightness_control">Brightness control</string>
     <string name="setup_light_sensor">Light sensor</string>
+    <string name="setup_usage_access">App-aware manual hold</string>
     <string name="setup_notifications">Notifications</string>
     <string name="setup_battery_optimization">Battery optimization</string>
     <string name="setup_item_ready">✓ %1$s — ready\n</string>
     <string name="setup_item_required">• %1$s — required\n</string>
     <string name="setup_item_recommended">• %1$s — recommended\n</string>
-    <string name="setup_note">Required items block startup; recommended items improve reliability.</string>
+    <string name="setup_note">Usage access keeps a manual level only in the current app. Without it, the level is held until the screen turns off.</string>
 
     <string name="toast_protection_on">Screen Protection on</string>
     <string name="toast_protection_off">Screen Protection off</string>
@@ -95,13 +97,15 @@
     <string name="value_inactive">inactive</string>
     <string name="value_registered">registered</string>
     <string name="value_not_registered">not registered</string>
+    <string name="user_hold_app_scope">same app (%1$s)</string>
+    <string name="user_hold_screen_scope">until screen off</string>
     <string name="duration_ms">%1$d ms</string>
     <string name="duration_seconds">%1$d s</string>
     <string name="duration_minutes_seconds">%1$d min %2$02d s</string>
     <string name="age_ago">%1$s ago</string>
 
     <string name="protection_status_text">Protection: %1$s\nMode: %2$s\nEnvironment: %3$s\nLux: %4$s\nBrightness: raw %5$d\nSampling: %6$s</string>
-    <string name="auto_diagnostic_text">Diagnostic mode\nProtection: %1$s\nMode: %2$s\nPower: %3$s\nSampling: %4$s\nAccepted lux: %5$s / %6$s\nFast / slow: %7$s / %8$s\nThresholds: dark &lt; %9$s · bright &gt; %10$s\nAmbient: %11$s / %12$s\nCurrent: %13$d%% / raw %14$d\nTarget: %15$d%% / raw %16$d\nDecision: %17$s / %18$s\nConfidence: %19$d%%\nDecision age: %20$s\nUser hold: %21$d s</string>
+    <string name="auto_diagnostic_text">Diagnostic mode\nProtection: %1$s\nMode: %2$s\nPower: %3$s\nSampling: %4$s\nAccepted lux: %5$s / %6$s\nFast / slow: %7$s / %8$s\nThresholds: dark &lt; %9$s · bright &gt; %10$s\nAmbient: %11$s / %12$s\nCurrent: %13$d%% / raw %14$d\nTarget: %15$d%% / raw %16$d\nDecision: %17$s / %18$s\nConfidence: %19$d%%\nDecision age: %20$s\nUser hold: %21$s</string>
     <string name="battery_diagnostic_text">Battery layer\nPower state: %1$s\nLast power reason: %2$s\nLast power change: %3$s\nState transitions: %4$d\nScreen on/off: %5$d / %6$d\nSensor register/unregister: %7$d / %8$d\nSensor samples processed/dropped: %9$d / %10$d\nEvaluations: %11$d\nThrottled evaluations: %12$d\nLux persisted: %13$d\nDecisions: %14$d\nBrightness writes/skips: %15$d / %16$d\nNormal log skips: %17$d\nCounter storage: RAM hot path / flushed on stop</string>
     <string name="service_diagnostic_text">Service health\nHealth: %1$s\nPower state: %2$s\nRuntime: %3$s\nLast lifecycle signal: %4$s\nLifecycle reason: %5$s\nForeground: %6$s / %7$s\nScreen receiver: %8$s\nCreated: %9$s\nStarted: %10$s\nStopped: %11$s\nStop reason: %12$s\nBoot restore: %13$s\nBoot action: %14$s</string>
 

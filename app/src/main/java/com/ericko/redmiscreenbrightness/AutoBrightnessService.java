@@ -222,7 +222,7 @@ public final class AutoBrightnessService extends Service {
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
         ProtectionPowerState powerState = ProtectionBatteryStats.getPowerState(this);
         float lux = AutoBrightnessManager.getLastLux(this);
-        long holdMs = AutoBrightnessManager.getUserHoldRemainingMs(this);
+        boolean holdActive = AutoBrightnessManager.isUserHoldActive(this);
         int raw = BrightnessLevels.getCachedSystemRaw(this, -1);
         int percent = raw < 0 ? -1 : BrightnessLevels.getPercentForRaw(raw);
 
@@ -251,7 +251,7 @@ public final class AutoBrightnessService extends Service {
                             AutoBrightnessManager.getDisplayMode(this, mode))
                     + "\n" + getString(
                             R.string.notification_power, readablePowerState(powerState))
-                    + (holdMs > 0L
+                    + (holdActive
                             ? "\n" + getString(R.string.notification_manual_hold)
                             : "");
         }
@@ -278,7 +278,7 @@ public final class AutoBrightnessService extends Service {
         ProtectionPowerState power = ProtectionBatteryStats.getPowerState(this);
         int raw = power == ProtectionPowerState.SCREEN_OFF_SLEEP
                 ? -1 : BrightnessLevels.getCachedSystemRaw(this, -1);
-        boolean holdActive = AutoBrightnessManager.getUserHoldRemainingMs(this) > 0L;
+        boolean holdActive = AutoBrightnessManager.isUserHoldActive(this);
         long luxBucket = Math.round(AutoBrightnessManager.getLastLux(this));
         return mode.name() + '|' + power.name() + '|' + raw + '|' + luxBucket + '|' + holdActive;
     }

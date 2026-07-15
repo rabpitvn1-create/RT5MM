@@ -6,6 +6,7 @@
 
     <string name="setup_title">Thiết lập</string>
     <string name="action_allow_brightness">Cho phép điều khiển độ sáng</string>
+    <string name="action_allow_usage_access">Cho phép giữ độ sáng theo ứng dụng</string>
     <string name="action_allow_notifications">Cho phép thông báo</string>
     <string name="action_open_battery_settings">Mở cài đặt tối ưu pin</string>
     <string name="action_open_hyperos_settings">Mở cài đặt chạy nền HyperOS</string>
@@ -27,12 +28,13 @@
 
     <string name="setup_brightness_control">Điều khiển độ sáng</string>
     <string name="setup_light_sensor">Cảm biến ánh sáng</string>
+    <string name="setup_usage_access">Giữ độ sáng theo ứng dụng</string>
     <string name="setup_notifications">Thông báo</string>
     <string name="setup_battery_optimization">Tối ưu pin</string>
     <string name="setup_item_ready">✓ %1$s — đã sẵn sàng\n</string>
     <string name="setup_item_required">• %1$s — bắt buộc\n</string>
     <string name="setup_item_recommended">• %1$s — nên bật\n</string>
-    <string name="setup_note">Mục bắt buộc ảnh hưởng việc khởi động; mục đề xuất giúp ứng dụng hoạt động ổn định hơn.</string>
+    <string name="setup_note">Quyền truy cập sử dụng giúp giữ mức sáng trong ứng dụng hiện tại. Nếu chưa cấp, mức sáng được giữ đến khi tắt màn hình.</string>
 
     <string name="toast_protection_on">Đã bật bảo vệ màn hình</string>
     <string name="toast_protection_off">Đã tắt bảo vệ màn hình</string>
@@ -95,13 +97,15 @@
     <string name="value_inactive">không hoạt động</string>
     <string name="value_registered">đã đăng ký</string>
     <string name="value_not_registered">chưa đăng ký</string>
+    <string name="user_hold_app_scope">trong cùng ứng dụng (%1$s)</string>
+    <string name="user_hold_screen_scope">đến khi tắt màn hình</string>
     <string name="duration_ms">%1$d ms</string>
     <string name="duration_seconds">%1$d giây</string>
     <string name="duration_minutes_seconds">%1$d phút %2$02d giây</string>
     <string name="age_ago">cách đây %1$s</string>
 
     <string name="protection_status_text">Bảo vệ: %1$s\nChế độ: %2$s\nMôi trường: %3$s\nLux: %4$s\nĐộ sáng: raw %5$d\nLấy mẫu: %6$s</string>
-    <string name="auto_diagnostic_text">Chế độ chẩn đoán\nBảo vệ: %1$s\nChế độ: %2$s\nNguồn: %3$s\nLấy mẫu: %4$s\nLux đã nhận: %5$s / %6$s\nNhanh / chậm: %7$s / %8$s\nNgưỡng: tối &lt; %9$s · sáng &gt; %10$s\nMôi trường: %11$s / %12$s\nHiện tại: %13$d%% / raw %14$d\nMục tiêu: %15$d%% / raw %16$d\nQuyết định: %17$s / %18$s\nĐộ tin cậy: %19$d%%\nTuổi quyết định: %20$s\nGiữ thủ công: %21$d giây</string>
+    <string name="auto_diagnostic_text">Chế độ chẩn đoán\nBảo vệ: %1$s\nChế độ: %2$s\nNguồn: %3$s\nLấy mẫu: %4$s\nLux đã nhận: %5$s / %6$s\nNhanh / chậm: %7$s / %8$s\nNgưỡng: tối &lt; %9$s · sáng &gt; %10$s\nMôi trường: %11$s / %12$s\nHiện tại: %13$d%% / raw %14$d\nMục tiêu: %15$d%% / raw %16$d\nQuyết định: %17$s / %18$s\nĐộ tin cậy: %19$d%%\nTuổi quyết định: %20$s\nGiữ thủ công: %21$s</string>
     <string name="battery_diagnostic_text">Lớp tiết kiệm pin\nTrạng thái nguồn: %1$s\nLý do nguồn gần nhất: %2$s\nThay đổi nguồn gần nhất: %3$s\nSố lần chuyển trạng thái: %4$d\nBật/tắt màn hình: %5$d / %6$d\nĐăng ký/hủy cảm biến: %7$d / %8$d\nMẫu đã xử lý/bỏ qua: %9$d / %10$d\nLần đánh giá: %11$d\nĐánh giá bị giới hạn: %12$d\nLần lưu lux: %13$d\nQuyết định: %14$d\nGhi/bỏ qua độ sáng: %15$d / %16$d\nNhật ký thường đã bỏ qua: %17$d\nBộ đếm: xử lý trong RAM / lưu khi dừng</string>
     <string name="service_diagnostic_text">Tình trạng dịch vụ\nSức khỏe: %1$s\nTrạng thái nguồn: %2$s\nTiến trình: %3$s\nTín hiệu vòng đời gần nhất: %4$s\nLý do vòng đời: %5$s\nNền trước: %6$s / %7$s\nBộ nhận màn hình: %8$s\nĐã tạo: %9$s\nĐã khởi động: %10$s\nĐã dừng: %11$s\nLý do dừng: %12$s\nKhôi phục sau khởi động: %13$s\nHành động khởi động: %14$s</string>
 

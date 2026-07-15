@@ -1,4 +1,4 @@
-# Screen Protection 2.1
+# Screen Protection 2.1.1
 
 A one-button adaptive-brightness controller built specifically for Redmi / HyperOS.
 
@@ -6,7 +6,7 @@ The app does not reuse Android's automatic-brightness output. While enabled, it 
 
 ## Release
 
-- Version: **2.1.0**
+- Version: **2.1.1**
 - Package: `com.ericko.redmiscreenbrightness`
 - Minimum Android: 7.0 / API 24
 - Target Android: API 35
@@ -81,10 +81,12 @@ callbacks faster than the requested Android rate.
 
 A real external brightness change is distinguished from an app write by matching the exact raw value and a short observer window. A stable manual change enters user hold rather than being overwritten.
 
-- Normal hold: 10 minutes.
-- Deep-night hold: 5 minutes.
-- Hold can end early after a major environmental change.
-- Opening the app or Quick Settings while protection is already running no longer clears the hold.
+- With Usage Access granted, the chosen level remains unchanged for as long as the same app stays in the foreground.
+- Moving to another app releases the hold within the low-power three-second check interval and rebuilds fresh ambient history.
+- Turning the screen off always releases the hold; turning it back on resumes protection from fresh sensor data.
+- Without Usage Access, the safe fallback is to keep the chosen level until the screen turns off.
+- Android SystemUI is ignored when identifying the foreground app, so opening the notification shade to move the brightness slider does not immediately release the hold.
+- Lux changes never expire a manual hold while its app session is still active.
 
 ## Battery behavior
 
@@ -109,6 +111,7 @@ Required:
 
 Recommended on HyperOS:
 
+- Usage Access for app-aware manual brightness hold.
 - Notification permission on Android 13+.
 - Review battery optimization settings if HyperOS stops the service.
 - Autostart / No restrictions / Lock in Recents when available.
@@ -135,6 +138,7 @@ GitHub Actions runs unit tests before every APK build. Coverage includes:
 - safe dark settle;
 - zero-timestamp warmup;
 - adaptive sampling state transitions and anti-thrash behavior;
+- manual hold retention, app-change release and screen-off fallback policy;
 - bounded transition calculations;
 - monotonic lux-to-raw output;
 - immutable original Redmi raw anchors.
