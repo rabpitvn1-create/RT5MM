@@ -153,7 +153,8 @@ public final class BrightnessLogManager {
                 + " | protection=" + (appAuto ? "on" : "off")
                 + " | appMode=" + AutoBrightnessManager.getDisplayMode(
                         context, AutoBrightnessManager.getSavedMode(context))
-                + " | cooldownMs=" + AutoBrightnessManager.getCooldownRemainingMs(context)
+                + " | userHoldActive=" + AutoBrightnessManager.isUserHoldActive(context)
+                + " | userHoldPackage=" + AutoBrightnessManager.getUserHoldPackage(context)
                 + "\n";
     }
 

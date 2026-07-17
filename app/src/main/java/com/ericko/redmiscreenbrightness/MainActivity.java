@@ -38,6 +38,7 @@ public final class MainActivity extends Activity {
     private TextView setupText;
     private Button primaryButton;
     private Button writeButton;
+    private Button usageAccessButton;
     private Button notificationButton;
     private Button batteryButton;
     private Button hyperOsButton;
@@ -141,6 +142,8 @@ public final class MainActivity extends Activity {
 
         writeButton = secondaryButton(
                 getString(R.string.action_allow_brightness), v -> openWriteSettings());
+        usageAccessButton = secondaryButton(
+                getString(R.string.action_allow_usage_access), v -> openUsageAccessSettings());
         notificationButton = secondaryButton(
                 getString(R.string.action_allow_notifications), v -> requestNotifications());
         batteryButton = secondaryButton(
@@ -148,6 +151,7 @@ public final class MainActivity extends Activity {
         hyperOsButton = secondaryButton(
                 getString(R.string.action_open_hyperos_settings), v -> openHyperOsSettings());
         setupCard.addView(writeButton, matchHeight(48));
+        setupCard.addView(usageAccessButton, matchHeight(48));
         setupCard.addView(notificationButton, matchHeight(48));
         setupCard.addView(batteryButton, matchHeight(48));
         setupCard.addView(hyperOsButton, matchHeight(48));
@@ -206,6 +210,7 @@ public final class MainActivity extends Activity {
         AutoBrightnessManager.Mode mode = AutoBrightnessManager.getSavedMode(this);
         boolean sensor = AutoBrightnessManager.hasLightSensor(this);
         boolean write = Settings.System.canWrite(this);
+        boolean usageAccess = ForegroundAppTracker.hasUsageAccess(this);
         boolean notification = notificationsGranted();
         boolean battery = batteryOptimizationIgnored();
         float lux = AutoBrightnessManager.getLastLux(this);
@@ -251,10 +256,15 @@ public final class MainActivity extends Activity {
         setupText.setText(
                 statusLine(write, getString(R.string.setup_brightness_control), true)
                         + statusLine(sensor, getString(R.string.setup_light_sensor), true)
+                        + statusLine(
+                                usageAccess,
+                                getString(R.string.setup_usage_access),
+                                false)
                         + statusLine(notification, getString(R.string.setup_notifications), false)
                         + statusLine(battery, getString(R.string.setup_battery_optimization), false)
                         + getString(R.string.setup_note));
         writeButton.setVisibility(write ? View.GONE : View.VISIBLE);
+        usageAccessButton.setVisibility(usageAccess ? View.GONE : View.VISIBLE);
         notificationButton.setVisibility(notification ? View.GONE : View.VISIBLE);
         batteryButton.setVisibility(battery ? View.GONE : View.VISIBLE);
         hyperOsButton.setVisibility(View.VISIBLE);
@@ -279,6 +289,10 @@ public final class MainActivity extends Activity {
         Intent intent = new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS);
         intent.setData(Uri.parse("package:" + getPackageName()));
         if (!tryStart(intent)) openAppDetails();
+    }
+
+    private void openUsageAccessSettings() {
+        if (!tryStart(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))) openAppDetails();
     }
 
     private void openBatterySettings() {
