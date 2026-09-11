@@ -17,14 +17,14 @@ public final class BrightnessLevels {
     private static final long APP_WRITE_OBSERVER_WINDOW_MS = 2500L;
     private static volatile int cachedSystemRaw = -1;
 
-    // Preserve the original calibrated Redmi raw anchors exactly.
+    // Preserve the calibrated Redmi curve with a +3 raw offset at every level.
     private static final int[] PERCENTS = new int[] {
             5, 8, 10, 12, 15, 18, 20, 23, 25, 28, 30, 33,
             35, 38, 40, 43, 45, 48, 50, 53, 55, 58, 60
     };
     private static final int[] RAW_VALUES = new int[] {
-            4, 5, 6, 7, 8, 10, 11, 13, 14, 16, 17, 19,
-            21, 23, 26, 28, 31, 34, 38, 40, 43, 46, 49
+            7, 8, 9, 10, 11, 13, 14, 16, 17, 19, 20, 22,
+            24, 26, 29, 31, 34, 37, 41, 43, 46, 49, 52
     };
 
     private BrightnessLevels() {

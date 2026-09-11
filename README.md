@@ -38,19 +38,19 @@ Brightness write  = controlled side effect
 
 Cached lux is diagnostic-only. Screen wake, process recovery and manual refresh always rebuild fresh sensor history before changing brightness.
 
-## Original raw calibration retained
+## Raw calibration with +3 offset
 
-The verified Redmi anchors are permanent regression-tested invariants:
+Every calibrated Redmi raw level is shifted upward by 3 while preserving the original spacing and interpolation behavior:
 
 | Display level | System raw |
 |---:|---:|
-| 20% | 11 |
-| 30% | 17 |
-| 40% | 26 |
-| 50% | 38 |
-| 60% | 49 |
+| 20% | 14 |
+| 30% | 20 |
+| 40% | 29 |
+| 50% | 41 |
+| 60% | 52 |
 
-Intermediate values use monotonic logarithmic interpolation. The protected curve is clamped to raw **4–49**.
+Intermediate values use monotonic logarithmic interpolation. The protected curve is clamped to raw **7–52**.
 
 ## Ambient estimator
 
@@ -59,7 +59,7 @@ Intermediate values use monotonic logarithmic interpolation. The protected curve
 - Brightening is faster than darkening.
 - Strong sunlight has a guarded readable intermediate step.
 - Sudden darkness has a safe intermediate settle.
-- Raw 4–6 requires confirmed deep-night evidence.
+- Raw 7–9 requires confirmed deep-night evidence.
 - A dedicated occlusion guard rejects a brief hand or pocket cover after a bright environment.
 - Hysteresis prevents repeated writes near a threshold.
 
@@ -141,6 +141,6 @@ GitHub Actions runs unit tests before every APK build. Coverage includes:
 - manual hold retention, app-change release and screen-off fallback policy;
 - bounded transition calculations;
 - monotonic lux-to-raw output;
-- immutable original Redmi raw anchors.
+- shifted Redmi raw anchors.
 
 The main workflow publishes the latest successful `main` APK under the `screen-protection-latest` release tag.

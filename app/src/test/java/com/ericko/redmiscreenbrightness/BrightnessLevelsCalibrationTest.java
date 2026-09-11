@@ -7,12 +7,12 @@ import org.junit.Test;
 
 public class BrightnessLevelsCalibrationTest {
     @Test
-    public void originalRawAnchorsNeverDrift() {
-        assertEquals(11, BrightnessLevels.getRawForPercent(20));
-        assertEquals(17, BrightnessLevels.getRawForPercent(30));
-        assertEquals(26, BrightnessLevels.getRawForPercent(40));
-        assertEquals(38, BrightnessLevels.getRawForPercent(50));
-        assertEquals(49, BrightnessLevels.getRawForPercent(60));
+    public void shiftedRawAnchorsNeverDrift() {
+        assertEquals(14, BrightnessLevels.getRawForPercent(20));
+        assertEquals(20, BrightnessLevels.getRawForPercent(30));
+        assertEquals(29, BrightnessLevels.getRawForPercent(40));
+        assertEquals(41, BrightnessLevels.getRawForPercent(50));
+        assertEquals(52, BrightnessLevels.getRawForPercent(60));
     }
 
     @Test

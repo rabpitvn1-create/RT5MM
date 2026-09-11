@@ -8,8 +8,8 @@ import org.junit.Test;
 public class ProtectionTransitionEngineBudgetTest {
     @Test
     public void largeUpwardTransitionReachesTargetWithinThreeWrites() {
-        int current = 7;
-        int target = 49;
+        int current = 10;
+        int target = 52;
 
         int first = ProtectionTransitionEngine.calculateBudgetedNextRaw(current, target, 3);
         int second = ProtectionTransitionEngine.calculateBudgetedNextRaw(first, target, 2);
@@ -22,8 +22,8 @@ public class ProtectionTransitionEngineBudgetTest {
 
     @Test
     public void largeDownwardTransitionReachesTargetWithinThreeWrites() {
-        int current = 49;
-        int target = 4;
+        int current = 52;
+        int target = 7;
 
         int first = ProtectionTransitionEngine.calculateBudgetedNextRaw(current, target, 3);
         int second = ProtectionTransitionEngine.calculateBudgetedNextRaw(first, target, 2);
@@ -36,6 +36,6 @@ public class ProtectionTransitionEngineBudgetTest {
 
     @Test
     public void smallTransitionUsesSingleFinalWrite() {
-        assertEquals(21, ProtectionTransitionEngine.calculateBudgetedNextRaw(20, 21, 3));
+        assertEquals(24, ProtectionTransitionEngine.calculateBudgetedNextRaw(23, 24, 3));
     }
 }

@@ -5,8 +5,8 @@ import android.content.Context;
 /**
  * Monotonic, conservative lux-to-raw curve for the Redmi/HyperOS panel.
  *
- * The five user-verified anchors are preserved exactly:
- * 20% = raw 11, 30% = raw 17, 40% = raw 26, 50% = raw 38, 60% = raw 49.
+ * The calibrated anchors use a +3 raw offset:
+ * 20% = raw 14, 30% = raw 20, 40% = raw 29, 50% = raw 41, 60% = raw 52.
  */
 public final class ProtectionCurveEngine {
     private static final float[] LUX_POINTS = new float[] {
@@ -16,13 +16,13 @@ public final class ProtectionCurveEngine {
     };
 
     private static final int[] RAW_POINTS = new int[] {
-            4, 5, 6, 7, 11, 13, 14, 16, 17, 19,
-            21, 23, 26, 28, 31, 34, 38, 40, 43, 46,
-            49
+            7, 8, 9, 10, 14, 16, 17, 19, 20, 22,
+            24, 26, 29, 31, 34, 37, 41, 43, 46, 49,
+            52
     };
 
-    private static final int MIN_PROTECTION_RAW = 4;
-    private static final int MAX_PROTECTION_RAW = 49;
+    private static final int MIN_PROTECTION_RAW = 7;
+    private static final int MAX_PROTECTION_RAW = 52;
 
     private ProtectionCurveEngine() {
     }
@@ -46,7 +46,7 @@ public final class ProtectionCurveEngine {
     }
 
     public static boolean isDeepNightRaw(int raw) {
-        return raw <= 6;
+        return raw <= 9;
     }
 
     public static boolean isDeepNightLux(float lux) {

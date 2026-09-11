@@ -24,16 +24,16 @@ public final class ProtectionAmbientController {
     private static final long INTERMEDIATE_COOLDOWN_MS = 900L;
 
     private static final float SUNLIGHT_MIN_LUX = 500f;
-    private static final int SUNLIGHT_MIN_TARGET_RAW = 28;
+    private static final int SUNLIGHT_MIN_TARGET_RAW = 31;
     private static final int SUNLIGHT_MIN_RAW_DELTA = 6;
-    private static final int SUNLIGHT_RESCUE_LOW_RAW = 31;
-    private static final int SUNLIGHT_RESCUE_MID_RAW = 37;
-    private static final int SUNLIGHT_RESCUE_HIGH_RAW = 43;
+    private static final int SUNLIGHT_RESCUE_LOW_RAW = 34;
+    private static final int SUNLIGHT_RESCUE_MID_RAW = 40;
+    private static final int SUNLIGHT_RESCUE_HIGH_RAW = 46;
 
     private static final float DARK_SETTLE_MAX_LUX = 25f;
     private static final int DARK_SETTLE_MIN_RAW_DELTA = 5;
-    private static final int DARK_SETTLE_FLOOR_RAW = 8;
-    private static final int DARK_SETTLE_CEILING_RAW = 14;
+    private static final int DARK_SETTLE_FLOOR_RAW = 11;
+    private static final int DARK_SETTLE_CEILING_RAW = 17;
 
     public enum Action {
         HOLD,
@@ -372,13 +372,13 @@ public final class ProtectionAmbientController {
     }
 
     private int getSunlightRescueRaw(int currentRaw, int targetRaw) {
-        if (currentRaw < 12) {
+        if (currentRaw < 15) {
             return Math.min(targetRaw, SUNLIGHT_RESCUE_LOW_RAW);
         }
-        if (currentRaw < 20) {
+        if (currentRaw < 23) {
             return Math.min(targetRaw, SUNLIGHT_RESCUE_MID_RAW);
         }
-        if (currentRaw < 28) {
+        if (currentRaw < 31) {
             return Math.min(targetRaw, SUNLIGHT_RESCUE_HIGH_RAW);
         }
         return -1;
