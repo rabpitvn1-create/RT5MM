@@ -1,4 +1,4 @@
-# Screen Protection 2.1.1
+# Screen Protection 2.1.2
 
 A one-button adaptive-brightness controller built specifically for Redmi / HyperOS.
 
@@ -6,7 +6,7 @@ The app does not reuse Android's automatic-brightness output. While enabled, it 
 
 ## Release
 
-- Version: **2.1.1**
+- Version: **2.1.2**
 - Package: `com.ericko.redmiscreenbrightness`
 - Minimum Android: 7.0 / API 24
 - Target Android: API 35
