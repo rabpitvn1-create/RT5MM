@@ -95,6 +95,7 @@
     <string name="value_inactive">inactive</string>
     <string name="value_registered">registered</string>
     <string name="value_not_registered">not registered</string>
+    <string name="user_hold_app_scope">same app (%1$s)</string>
     <string name="user_hold_screen_scope">until screen off</string>
     <string name="duration_ms">%1$d ms</string>
     <string name="duration_seconds">%1$d s</string>
