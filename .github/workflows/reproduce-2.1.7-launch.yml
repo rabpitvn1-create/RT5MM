@@ -1,0 +1,33 @@
+name: Reproduce Screen Protection 2.1.7 launch
+on:
+  push:
+    branches: [fix/2.1.8-launch-repro]
+permissions:
+  contents: read
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [35, 36]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the published 2.1.7 APK
+        run: |
+          curl -fsSL --retry 2 'https://github.com/rabpitvn1-create/RT5MM/releases/download/screen-protection-v2.1.7-obsidian-precision/Screen-Protection-2.1.7-Obsidian-Precision-release.apk' -o shipped-2.1.7.apk
+          echo 'eaef606a746cf3e7eec0c84380290e48c8fa6195f8bb2051292668c4b1dd8350  shipped-2.1.7.apk' | sha256sum -c
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Cold launch the shipped release and inspect the first frame
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: bash scripts/check-android-launch.sh shipped-2.1.7.apk
