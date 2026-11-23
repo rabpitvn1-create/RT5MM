@@ -1,0 +1,99 @@
+name: RT5MM 2.1.7 Obsidian Precision Official Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/official-release-2.1.7.yml'
+      - 'RELEASE_NOTES_2.1.7.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screen-protection-v2.1.7-obsidian
+  cancel-in-progress: false
+
+jobs:
+  test-build-release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: screen-protection-v2.1.7-obsidian-precision
+      APK_NAME: Screen-Protection-2.1.7-Obsidian-Precision-release.apk
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+      - name: Check release version
+        id: version
+        shell: bash
+        run: |
+          if grep -Eq "^[[:space:]]*versionName '2\.1\.7'[[:space:]]*$" app/build.gradle; then
+            echo 'matches=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Set up Java 17
+        if: steps.version.outputs.matches == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        if: steps.version.outputs.matches == 'true'
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK 35
+        if: steps.version.outputs.matches == 'true'
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Set up Gradle 8.7
+        if: steps.version.outputs.matches == 'true'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Run unit tests
+        if: steps.version.outputs.matches == 'true'
+        run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Lint and assemble release APK
+        if: steps.version.outputs.matches == 'true'
+        run: gradle --no-daemon :app:lintRelease :app:assembleRelease
+      - name: Verify APK package, version and signature
+        if: steps.version.outputs.matches == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          test -s "$APK"
+          BADGING=$("$TOOLS/aapt" dump badging "$APK")
+          grep -Fq "package: name='com.ericko.redmiscreenbrightness' versionCode='108' versionName='2.1.7'" <<< "$BADGING"
+          "$TOOLS/apksigner" verify --verbose --print-certs "$APK"
+          mkdir -p release
+          cp "$APK" "release/$APK_NAME"
+          (cd release && sha256sum "$APK_NAME" > SHA256SUMS.txt)
+          echo "APK_SHA256=$(cut -d ' ' -f1 release/SHA256SUMS.txt)" >> "$GITHUB_ENV"
+      - name: Upload APK and checksum artifact
+        if: steps.version.outputs.matches == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RT5MM-2.1.7-Obsidian-Precision-release
+          path: |
+            release/${{ env.APK_NAME }}
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+      - name: Publish official Latest Release
+        if: steps.version.outputs.matches == 'true' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release exists. Preserving the published APK."
+            exit 0
+          fi
+          cp RELEASE_NOTES_2.1.7.md release/RELEASE_NOTES.md
+          printf '\nBuild commit: %s\n\nSHA-256: %s\n' "$GITHUB_SHA" "$APK_SHA256" >> release/RELEASE_NOTES.md
+          gh release create "$TAG" "release/$APK_NAME" release/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "Screen Protection 2.1.7 Obsidian Precision" \
+            --notes-file release/RELEASE_NOTES.md --latest

@@ -1,51 +1,29 @@
 package com.ericko.redmiscreenbrightness;
 
-/**
- * Presentation-only state reducer. Inputs are externally confirmed runtime facts,
- * not the persisted "user wants protection enabled" flag alone.
- */
+/** Presentation-only reducer. Lux freshness does not determine controller health. */
 public final class ObsidianUiState {
     public enum Phase {
-        OFF,
-        PERMISSION_REQUIRED,
-        STARTING,
-        PROTECTING,
-        USER_HOLD,
-        WAITING_SENSOR,
-        SERVICE_ERROR,
-        RESTORE_FAILED
+        OFF, PERMISSION_REQUIRED, STARTING, STOPPING, PROTECTING, USER_HOLD,
+        WAITING_SENSOR, UNCONFIRMED, SERVICE_ERROR, RESTORE_FAILED
     }
 
-    public enum Ambient {
-        UNKNOWN, LOW, MEDIUM, HIGH
-    }
+    public enum Ambient { UNKNOWN, LOW, MEDIUM, HIGH }
 
     private ObsidianUiState() {}
 
     public static Phase resolve(
-            boolean requestedOn,
-            boolean hasWritePermission,
-            boolean hasLightSensor,
-            boolean restorePending,
-            boolean foregroundHealthy,
-            boolean systemManualConfirmed,
-            boolean sensorRegistered,
-            boolean sensorFresh,
-            boolean manualHold,
-            boolean insideStartGrace) {
-        if (!requestedOn) {
-            if (restorePending) return Phase.RESTORE_FAILED;
-            if (!hasLightSensor) return Phase.SERVICE_ERROR;
-            if (!hasWritePermission) return Phase.PERMISSION_REQUIRED;
-            return Phase.OFF;
-        }
-
-        if (!hasWritePermission || !hasLightSensor) return Phase.SERVICE_ERROR;
-        if (foregroundHealthy && systemManualConfirmed && sensorRegistered) {
-            if (!sensorFresh) return Phase.WAITING_SENSOR;
-            return manualHold ? Phase.USER_HOLD : Phase.PROTECTING;
-        }
-        return insideStartGrace ? Phase.STARTING : Phase.SERVICE_ERROR;
+            boolean requestedOn, boolean hasPermission, boolean hasSensor,
+            boolean restoreFailed, boolean stopping, boolean starting,
+            boolean confirmedControl, boolean manualHold,
+            boolean readingSensor, boolean confirmedFailure) {
+        if (restoreFailed) return Phase.RESTORE_FAILED;
+        if (stopping) return Phase.STOPPING;
+        if (!hasPermission) return Phase.PERMISSION_REQUIRED;
+        if (starting) return Phase.STARTING;
+        if (!hasSensor || confirmedFailure) return Phase.SERVICE_ERROR;
+        if (!requestedOn) return Phase.OFF;
+        if (confirmedControl) return manualHold ? Phase.USER_HOLD : Phase.PROTECTING;
+        return readingSensor ? Phase.WAITING_SENSOR : Phase.UNCONFIRMED;
     }
 
     public static Ambient ambient(float lux) {
@@ -55,7 +33,7 @@ public final class ObsidianUiState {
         return Ambient.HIGH;
     }
 
-    public static boolean canShowMetrics(Phase phase) {
+    public static boolean isControlling(Phase phase) {
         return phase == Phase.PROTECTING || phase == Phase.USER_HOLD;
     }
 }

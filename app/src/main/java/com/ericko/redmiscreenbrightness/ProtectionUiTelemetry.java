@@ -34,6 +34,10 @@ public final class ProtectionUiTelemetry {
         return sensorRegistered;
     }
 
+    public static boolean hasObservedSample() {
+        return sensorRegistered && lastSampleElapsed >= 0L;
+    }
+
     public static boolean hasFreshSample() {
         long sampledAt = lastSampleElapsed;
         long now = SystemClock.elapsedRealtime();
