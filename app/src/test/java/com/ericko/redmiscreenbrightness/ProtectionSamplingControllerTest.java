@@ -7,9 +7,9 @@ public class ProtectionSamplingControllerTest {
     @Test public void stableAmbientMovesToEco() {
         ProtectionSamplingController c=new ProtectionSamplingController();
         c.reset(0L);
-        c.onAmbientResult(2000L,ProtectionAmbientController.Action.HOLD,"AMBIENT_HYSTERESIS_HOLD",false);
+        c.onAmbientResult(4000L,ProtectionAmbientController.Action.HOLD,"AMBIENT_HYSTERESIS_HOLD",false);
         assertEquals(ProtectionSamplingController.Mode.ACTIVE_TRACK,c.getMode());
-        c.onAmbientResult(7000L,ProtectionAmbientController.Action.HOLD,"AMBIENT_HYSTERESIS_HOLD",false);
+        c.onAmbientResult(9500L,ProtectionAmbientController.Action.HOLD,"AMBIENT_HYSTERESIS_HOLD",false);
         assertEquals(ProtectionSamplingController.Mode.STABLE_ECO,c.getMode());
     }
     @Test public void suddenChangeRestoresFastTrack() {

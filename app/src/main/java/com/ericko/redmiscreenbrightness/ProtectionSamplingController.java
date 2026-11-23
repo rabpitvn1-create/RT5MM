@@ -73,7 +73,7 @@ public final class ProtectionSamplingController {
 
         if (userHoldActive) {
             stableSinceMs = -1L;
-            return commit(Mode.USER_HOLD_ECO, nowMs, false);
+            return commit(Mode.USER_HOLD_ECO, nowMs, true);
         }
 
         if (isMeaningfulAction(action)) {

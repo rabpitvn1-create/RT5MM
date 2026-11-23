@@ -84,18 +84,3 @@ jobs:
               --latest
           fi
 
-      - name: Publish Adaptive Core 2.1.5 debug prerelease
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG_NAME: screen-protection-v2.1.5-adaptive-core-debug
-          APK_PATH: release/Screen-Protection-debug.apk
-        run: |
-          NOTES="Screen Protection 2.1.5 Adaptive Core debug for internal testing on Redmi K90 / HyperOS 4. One button on/off. OEM auto switches to MANUAL on enable and restores prior mode on disable. Replaces foreground-app Usage Access handling with ambient-lux hysteresis/manual hold. Quicker ambient estimator, sensor eco sampling and event-to-Settings write latency logs. No root, Magisk, Shizuku, helper, overlay or Extra Dim. RT5MM raw curve (17/19/49/52 reference) is NOT validated on K90; device testing required. Battery savings and reaction-time improvement have not been measured on K90."
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release upload "$TAG_NAME" "$APK_PATH" --clobber
-            gh release edit "$TAG_NAME" --title "Screen Protection 2.1.5 Adaptive Core (debug)" --notes "$NOTES" --prerelease
-          else
-            gh release create "$TAG_NAME" "$APK_PATH" --target "$GITHUB_SHA" --prerelease \
-              --title "Screen Protection 2.1.5 Adaptive Core (debug)" --notes "$NOTES"
-          fi
