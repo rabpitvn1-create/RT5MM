@@ -44,7 +44,12 @@ jobs:
         run: |
           TAG=screen-protection-v2.1.5-adaptive-core-debug
           ASSET=app/build/outputs/apk/debug/app-debug.apk
-          NOTES="Adaptive Core 2.1.5 debug. One button; removes foreground app tracking and Usage Access; holds manual brightness until significant confirmed ambient change. Faster light adaptation, low-power sampling, source-to-Settings write latency log. Experimental: raw 17/19/49/52 and the 60% app-level protection cap are NOT verified on Redmi K90. No root/ADB/Shizuku/Magisk or external helper."
+          # Match the source-code tag to the exact commit that produced this APK.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG" --force
+          NOTES="Adaptive Core 2.1.5 debug. One button; removes foreground app tracking and Usage Access; holds manual brightness until significant confirmed ambient change. Faster light adaptation, low-power sampling, source-to-Settings write latency log. Experimental: raw 17/19/49/52 and the 60% app-level protection cap are NOT verified on Redmi K90. No root/ADB/Shizuku/Magisk or external helper. Source commit: $GITHUB_SHA."
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ASSET" --clobber
             gh release edit "$TAG" --title "RT5MM Adaptive Core 2.1.5 debug" --notes "$NOTES" --prerelease
