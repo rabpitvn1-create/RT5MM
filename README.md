@@ -16,6 +16,8 @@ The app uses Android's `TYPE_LIGHT` sensor, **not** a claimed Xiaomi historic au
 
 The original RT5MM low-brightness curve is retained with **raw 7–52** as its protection band. Display-label points include 20% = raw 14, 30% = raw 20, 40% = raw 29, 50% = raw 41 and 60% = raw 52. The related manual HyperBrightnessWidget reference uses 30% = raw 17, optional raw 19 for comfort, and 60% = raw 49.
 
+**While the controller is enabled, its writes are capped to raw 52. A detected external manual slider change above raw 52 is also clamped back to 52, and that clamped value becomes the new manual hold. There may still be a brief overshoot before Android delivers the settings observer callback; a non-privileged app cannot guarantee a physical hard cap across other system actors.**
+
 **These raw-to-slider mappings have NOT been measured on the Redmi K90.** A 60% app label does not prove that the Xiaomi system slider is at 60% or that physical luminance is limited to 60% of full display output. Check raw 17/19/49/52 and corresponding system slider positions on the K90 before treating the cap as verified. Strong sunlight/readability or HBM is not guaranteed by a low cap.
 
 ## Adaptive Core changes since 2.1.4

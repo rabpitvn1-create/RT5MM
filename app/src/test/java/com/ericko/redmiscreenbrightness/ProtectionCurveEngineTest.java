@@ -27,6 +27,14 @@ public class ProtectionCurveEngineTest {
     }
 
     @Test
+    public void protectiveCeilingClampsOutOfRangeWrites() {
+        assertEquals(52, ProtectionCurveEngine.clampRaw(255));
+        assertEquals(52, ProtectionCurveEngine.clampRaw(1000));
+        assertEquals(49, ProtectionCurveEngine.clampRaw(49));
+        assertEquals(7, ProtectionCurveEngine.clampRaw(-1));
+    }
+
+    @Test
     public void invalidLuxFailsSafeToMinimum() {
         assertEquals(7, ProtectionCurveEngine.getTargetRaw(Float.NaN));
         assertEquals(7, ProtectionCurveEngine.getTargetRaw(-100f));

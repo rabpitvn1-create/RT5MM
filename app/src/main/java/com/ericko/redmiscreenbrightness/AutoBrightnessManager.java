@@ -123,6 +123,10 @@ public final class AutoBrightnessManager implements SensorEventListener {
             BrightnessLogManager.appendSnapshot(appContext, "WRITE_SETTINGS_UNAVAILABLE", getBestLux());
             return false;
         }
+        if (!enforceProtectionCeiling()) {
+            markUnavailable(appContext);
+            return false;
+        }
         if (!screenAwake) {
             ProtectionBatteryStats.setPowerState(
                     appContext, ProtectionPowerState.SCREEN_OFF_SLEEP, "START_SCREEN_OFF");
@@ -185,7 +189,11 @@ public final class AutoBrightnessManager implements SensorEventListener {
         screenAwake = true;
         saveMode(appContext, isUserHoldActive(appContext) ? Mode.USER_HOLD : Mode.PROTECTING);
         ProtectionLatencyProbe.reset();
-        BrightnessLevels.captureAndForceManualMode(appContext);
+        if (!BrightnessLevels.captureAndForceManualMode(appContext)
+                || !enforceProtectionCeiling()) {
+            markUnavailable(appContext);
+            return;
+        }
         samplingController.onScreenWake(SystemClock.elapsedRealtime());
         registerSensor(samplingController.getMode(), "PROTECTION_SENSOR_REGISTERED_FORCE");
         ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.RECOVERY_WAKE, event);
@@ -206,7 +214,11 @@ public final class AutoBrightnessManager implements SensorEventListener {
         ambientController.reset();
         clearPendingExternal();
         occlusionSinceElapsed = -1L;
-        BrightnessLevels.captureAndForceManualMode(appContext);
+        if (!BrightnessLevels.captureAndForceManualMode(appContext)
+                || !enforceProtectionCeiling()) {
+            markUnavailable(appContext);
+            return;
+        }
         ProtectionBatteryStats.recordScreenOn(appContext);
         ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.RECOVERY_WAKE, event);
         samplingController.onScreenWake(SystemClock.elapsedRealtime());
@@ -219,6 +231,19 @@ public final class AutoBrightnessManager implements SensorEventListener {
         if (!isAutoEnabled(appContext)) return false;
         int currentRaw = BrightnessLevels.getSystemRaw(appContext, -1);
         if (currentRaw < 0 || BrightnessLevels.isRecentAppWrite(appContext, currentRaw)) return false;
+        // System brightness slider can be moved above the app's protective ceiling.
+        // Clamp it immediately when the observer detects the external write.
+        if (currentRaw > ProtectionCurveEngine.clampRaw(Integer.MAX_VALUE)) {
+            transitionEngine.cancel();
+            clearPendingExternal();
+            int ceiling = ProtectionCurveEngine.clampRaw(Integer.MAX_VALUE);
+            if (BrightnessLevels.applyProtectedRaw(appContext, ceiling)) {
+                recordUserHoldSession(ceiling, getBestLux(), "USER_BRIGHTNESS_CEILING");
+            } else {
+                markUnavailable(appContext);
+            }
+            return false;
+        }
 
         int lastAutoRaw = prefs(appContext).getInt(KEY_LAST_AUTO_RAW, -1);
         if (lastAutoRaw >= 0 && Math.abs(currentRaw - lastAutoRaw) < USER_CHANGE_MIN_RAW) {
@@ -349,6 +374,13 @@ public final class AutoBrightnessManager implements SensorEventListener {
             return reference;
         }
         return sensorLux;
+    }
+
+    private boolean enforceProtectionCeiling() {
+        int current = BrightnessLevels.getSystemRaw(appContext, -1);
+        if (current < 0) return false;
+        int ceiling = ProtectionCurveEngine.clampRaw(Integer.MAX_VALUE);
+        return current <= ceiling || BrightnessLevels.applyProtectedRaw(appContext, ceiling);
     }
 
     private boolean handleUserHoldObservation(float observedLux, long nowElapsed) {
