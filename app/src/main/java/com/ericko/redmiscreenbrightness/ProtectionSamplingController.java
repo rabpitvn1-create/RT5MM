@@ -2,15 +2,15 @@ package com.ericko.redmiscreenbrightness;
 
 /** Pure, monotonic policy for selecting the light-sensor sampling rate. */
 public final class ProtectionSamplingController {
-    private static final long FAST_TRACK_MS = 2500L;
-    private static final long STABLE_ECO_AFTER_MS = 9000L;
-    private static final long MIN_MODE_DWELL_MS = 2500L;
+    private static final long FAST_TRACK_MS = 1300L;
+    private static final long STABLE_ECO_AFTER_MS = 5000L;
+    private static final long MIN_MODE_DWELL_MS = 3500L;
 
     public enum Mode {
         FAST_TRACK(100_000, 0),
-        ACTIVE_TRACK(400_000, 0),
-        STABLE_ECO(1_500_000, 0),
-        USER_HOLD_ECO(3_000_000, 0),
+        ACTIVE_TRACK(350_000, 0),
+        STABLE_ECO(2_000_000, 500_000),
+        USER_HOLD_ECO(600_000, 0),
         SCREEN_OFF_SLEEP(0, 0);
 
         public final int samplingPeriodUs;

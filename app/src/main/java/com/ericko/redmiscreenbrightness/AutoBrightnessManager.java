@@ -26,7 +26,6 @@ public final class AutoBrightnessManager implements SensorEventListener {
     private static final String KEY_SENSOR_AVAILABLE = "auto_brightness_sensor_available";
     private static final String KEY_USER_HOLD_UNTIL = "auto_brightness_user_hold_until";
     private static final String KEY_USER_HOLD_ACTIVE = "auto_brightness_user_hold_active";
-    private static final String KEY_USER_HOLD_PACKAGE = "auto_brightness_user_hold_package";
     private static final String KEY_USER_HOLD_LUX = "auto_brightness_user_hold_lux";
     private static final String KEY_USER_HOLD_RAW = "auto_brightness_user_hold_raw";
     private static final String KEY_USER_HOLD_AT = "auto_brightness_user_hold_at";
@@ -53,13 +52,11 @@ public final class AutoBrightnessManager implements SensorEventListener {
     private static final int RAW_HYSTERESIS = 1;
     private static final int USER_CHANGE_MIN_RAW = 3;
     private static final long USER_INTENT_STABLE_MS = 900L;
-    private static final long FOREGROUND_APP_CHECK_INTERVAL_MS = 3_000L;
-    private static final long FOREGROUND_QUERY_OVERLAP_MS = 2_000L;
     private static final long LUX_PERSIST_INTERVAL_MS = 60_000L;
     private static final float LUX_PERSIST_RELATIVE_DELTA = 0.20f;
     private static final float LUX_PERSIST_ABSOLUTE_DELTA = 5f;
     private static final long DIAGNOSTIC_PERSIST_INTERVAL_MS = 60_000L;
-    private static final long OCCLUSION_GUARD_MS = 1600L;
+    private static final long OCCLUSION_GUARD_MS = 900L;
     private static final float OCCLUSION_PREVIOUS_MIN_LUX = 80f;
     private static final float OCCLUSION_SAMPLE_MAX_LUX = 6f;
 
@@ -77,6 +74,7 @@ public final class AutoBrightnessManager implements SensorEventListener {
     private final BrightnessDecisionEngine decisionEngine = new BrightnessDecisionEngine();
     private final ProtectionAmbientController ambientController = new ProtectionAmbientController();
     private final ProtectionSamplingController samplingController = new ProtectionSamplingController();
+    private final ManualHoldPolicy manualHoldPolicy = new ManualHoldPolicy();
 
     private boolean registered;
     private boolean screenAwake = true;
@@ -91,8 +89,6 @@ public final class AutoBrightnessManager implements SensorEventListener {
     private int pendingExternalRaw = -1;
     private long pendingExternalSinceElapsed = -1L;
     private long occlusionSinceElapsed = -1L;
-    private long lastForegroundCheckElapsed = -1L;
-    private long lastForegroundQueryWallMs = -1L;
 
     public AutoBrightnessManager(Context context) {
         appContext = context.getApplicationContext();
@@ -141,6 +137,7 @@ public final class AutoBrightnessManager implements SensorEventListener {
         samplingController.onScreenWake(now);
         ambientController.reset();
         decisionEngine.reset();
+        ProtectionLatencyProbe.reset();
         return registerSensor(samplingController.getMode(), "PROTECTION_SENSOR_REGISTERED");
     }
 
@@ -148,41 +145,46 @@ public final class AutoBrightnessManager implements SensorEventListener {
         transitionEngine.cancel();
         decisionEngine.reset();
         ambientController.reset();
+        ProtectionLatencyProbe.reset();
+        manualHoldPolicy.reset();
         unregisterSensor("PROTECTION_SENSOR_UNREGISTERED");
         ProtectionBatteryStats.flush(appContext);
     }
 
     public void enterScreenOffSleep(String event) {
         screenAwake = false;
-        boolean releasedUserHold = ManualHoldPolicy.shouldReleaseOnScreenOff(
-                isUserHoldActive(appContext));
-        if (releasedUserHold) clearUserHold(appContext);
-        resetForegroundTracking();
+        // Preserve the user's manual preference across sleep; after waking,
+        // only NEW ambient samples may release it after confirmed lux change.
+        boolean holdActive = isUserHoldActive(appContext);
+        manualHoldPolicy.reset();
         transitionEngine.cancel();
         decisionEngine.reset();
         ambientController.reset();
+        ProtectionLatencyProbe.reset();
         samplingController.onScreenOff(SystemClock.elapsedRealtime());
         unregisterSensor("PROTECTION_SENSOR_SLEEP_SCREEN_OFF");
         clearPendingExternal();
-        saveMode(appContext, isAutoEnabled(appContext) ? Mode.PROTECTING : Mode.OFF);
+        saveMode(appContext, isAutoEnabled(appContext)
+                ? (holdActive ? Mode.USER_HOLD : Mode.PROTECTING) : Mode.OFF);
         ProtectionBatteryStats.recordScreenOff(appContext);
         ProtectionBatteryStats.setPowerState(appContext, ProtectionPowerState.SCREEN_OFF_SLEEP, event);
         BrightnessLogManager.appendSnapshot(
                 appContext,
-                releasedUserHold ? event + "_USER_HOLD_RELEASED" : event,
+                holdActive ? event + "_USER_HOLD_PRESERVED" : event,
                 getBestLux());
     }
 
     public void forceAutoReevaluate(String event) {
-        clearUserHold(appContext);
-        resetForegroundTracking();
+        // Do not drop manual hold when recovering or refreshing.
+        manualHoldPolicy.reset();
         clearPendingExternal();
         transitionEngine.cancel();
         decisionEngine.reset();
         ambientController.reset();
         occlusionSinceElapsed = -1L;
         screenAwake = true;
-        saveMode(appContext, Mode.PROTECTING);
+        saveMode(appContext, isUserHoldActive(appContext) ? Mode.USER_HOLD : Mode.PROTECTING);
+        ProtectionLatencyProbe.reset();
         BrightnessLevels.captureAndForceManualMode(appContext);
         samplingController.onScreenWake(SystemClock.elapsedRealtime());
         registerSensor(samplingController.getMode(), "PROTECTION_SENSOR_REGISTERED_FORCE");
@@ -196,8 +198,9 @@ public final class AutoBrightnessManager implements SensorEventListener {
 
     public void onScreenWake(String event) {
         screenAwake = true;
-        clearUserHold(appContext);
-        resetForegroundTracking();
+        // A screen wake is not a meaningful light change by itself.
+        ProtectionLatencyProbe.reset();
+        manualHoldPolicy.reset();
         transitionEngine.cancel();
         decisionEngine.reset();
         ambientController.reset();
@@ -270,6 +273,7 @@ public final class AutoBrightnessManager implements SensorEventListener {
 
     @Override
     public void onSensorChanged(SensorEvent event) {
+        if (!isAutoEnabled(appContext)) return;
         if (event == null || event.sensor == null
                 || event.sensor.getType() != Sensor.TYPE_LIGHT
                 || event.values.length == 0 || !screenAwake) {
@@ -285,6 +289,7 @@ public final class AutoBrightnessManager implements SensorEventListener {
         }
         ProtectionBatteryStats.recordSensorSample(appContext);
         float sensorLux = clampLux(event.values[0]);
+        ProtectionLatencyProbe.observeSensor(now, sensorLux);
         float guardedLux = applyOcclusionGuard(sensorLux, now);
 
         int currentRaw = BrightnessLevels.getCachedSystemRaw(
@@ -349,83 +354,51 @@ public final class AutoBrightnessManager implements SensorEventListener {
     private boolean handleUserHoldObservation(float observedLux, long nowElapsed) {
         if (!isUserHoldActive(appContext)) {
             if (getSavedMode(appContext) == Mode.USER_HOLD) {
-                clearUserHold(appContext);
-                resetForegroundTracking();
+                manualHoldPolicy.reset();
                 saveMode(appContext, Mode.PROTECTING);
                 ambientController.reset();
                 samplingController.onScreenWake(nowElapsed);
-                BrightnessLogManager.appendSnapshot(
-                        appContext, "USER_HOLD_STALE_STATE_RELEASED", observedLux);
+                BrightnessLogManager.appendSnapshot(appContext,
+                        "USER_HOLD_STALE_STATE_RELEASED", observedLux);
                 return true;
             }
             return false;
         }
-
-        if (lastForegroundCheckElapsed < 0L
-                || nowElapsed < lastForegroundCheckElapsed
-                || nowElapsed - lastForegroundCheckElapsed >= FOREGROUND_APP_CHECK_INTERVAL_MS) {
-            lastForegroundCheckElapsed = nowElapsed;
-            String anchorPackage = getUserHoldPackage(appContext);
-            if (ForegroundAppTracker.hasUsageAccess(appContext)) {
-                long nowWall = System.currentTimeMillis();
-                String foregroundPackage;
-                if (anchorPackage.isEmpty()) {
-                    foregroundPackage = ForegroundAppTracker.captureForegroundPackage(appContext);
-                    anchorPackage = foregroundPackage;
-                    if (!anchorPackage.isEmpty()) {
-                        prefs(appContext).edit()
-                                .putString(KEY_USER_HOLD_PACKAGE, anchorPackage)
-                                .apply();
-                    }
-                } else if (lastForegroundQueryWallMs < 0L
-                        || lastForegroundQueryWallMs > nowWall) {
-                    foregroundPackage = ForegroundAppTracker.captureForegroundPackage(appContext);
-                } else {
-                    foregroundPackage = ForegroundAppTracker.findForegroundPackageSince(
-                            appContext,
-                            Math.max(0L, lastForegroundQueryWallMs - FOREGROUND_QUERY_OVERLAP_MS),
-                            anchorPackage);
-                }
-                lastForegroundQueryWallMs = nowWall;
-                if (ManualHoldPolicy.shouldReleaseForForeground(
-                        anchorPackage, foregroundPackage)) {
-                    releaseUserHold(
-                            observedLux,
-                            nowElapsed,
-                            "USER_HOLD_RELEASED_APP_CHANGED_"
-                                    + safe(anchorPackage) + "_TO_" + safe(foregroundPackage));
-                    return true;
-                }
-            }
+        SharedPreferences state = prefs(appContext);
+        float anchorLux = state.getFloat(KEY_USER_HOLD_LUX, -1f);
+        if (anchorLux < 0f) {
+            // A manual adjustment during screen wake needs a fresh sensor anchor.
+            state.edit().putFloat(KEY_USER_HOLD_LUX, observedLux).apply();
+            manualHoldPolicy.reset();
+            return true;
         }
-
+        if (manualHoldPolicy.shouldRelease(anchorLux, observedLux, nowElapsed)) {
+            releaseUserHold(observedLux, nowElapsed, "USER_HOLD_AMBIENT_CHANGE_CONFIRMED");
+            return true;
+        }
+        saveMode(appContext, Mode.USER_HOLD);
         lastRamLux = observedLux;
         liveLux = observedLux;
-        ProtectionBatteryStats.setPowerState(
-                appContext, ProtectionPowerState.USER_HOLD_LOW_POWER, "USER_HOLD_ACTIVE");
+        ProtectionBatteryStats.setPowerState(appContext,
+                ProtectionPowerState.USER_HOLD_LOW_POWER, "USER_HOLD_AMBIENT");
         return true;
     }
 
-    private void recordUserHoldSession(int raw, float lux, String event) {
-        String foregroundPackage = ForegroundAppTracker.captureForegroundPackage(appContext);
-        recordUserHold(appContext, raw, lux, foregroundPackage, event);
-        lastForegroundCheckElapsed = SystemClock.elapsedRealtime();
-        lastForegroundQueryWallMs = System.currentTimeMillis();
+    private void recordUserHoldSession(int raw, float ignoredLux, String event) {
+        float anchor = ambientController.isAmbientValid()
+                ? ambientController.getAmbientLux() : -1f;
+        manualHoldPolicy.reset();
+        recordUserHold(appContext, raw, anchor, event);
     }
 
     private void releaseUserHold(float observedLux, long nowElapsed, String event) {
         clearUserHold(appContext);
-        resetForegroundTracking();
+        manualHoldPolicy.reset();
         saveMode(appContext, Mode.PROTECTING);
         ambientController.reset();
         decisionEngine.reset();
         samplingController.onScreenWake(nowElapsed);
         BrightnessLogManager.appendSnapshot(appContext, event, observedLux);
-    }
-
-    private void resetForegroundTracking() {
-        lastForegroundCheckElapsed = -1L;
-        lastForegroundQueryWallMs = -1L;
     }
 
     private void evaluateConfirmedAmbient(float ambientLux, String event) {
@@ -636,7 +609,6 @@ public final class AutoBrightnessManager implements SensorEventListener {
             ProtectionBatteryStats.reset(app);
         } else {
             ProtectionBatteryStats.flush(app);
-            BrightnessLevels.restorePreviousBrightnessMode(app);
         }
         prefs(app).edit()
                 .putBoolean(KEY_AUTO_ENABLED, enabled)
@@ -646,8 +618,8 @@ public final class AutoBrightnessManager implements SensorEventListener {
                 .putFloat(KEY_USER_HOLD_LUX, -1f)
                 .remove(KEY_USER_HOLD_RAW)
                 .remove(KEY_USER_HOLD_AT)
-                .remove(KEY_USER_HOLD_PACKAGE)
                 .apply();
+        if (!enabled) BrightnessLevels.restorePreviousBrightnessMode(app);
         ProtectionBatteryStats.setPowerState(
                 app,
                 enabled ? ProtectionPowerState.RECOVERY_WAKE : ProtectionPowerState.OFF,
@@ -663,25 +635,15 @@ public final class AutoBrightnessManager implements SensorEventListener {
     }
 
     public static void recordManualOverride(Context context) {
-        recordUserHold(
-                context,
-                BrightnessLevels.getSystemRaw(context, -1),
-                getLastLux(context),
-                ForegroundAppTracker.captureForegroundPackage(context),
-                "USER_HOLD_RECORDED");
+        recordUserHold(context, BrightnessLevels.getSystemRaw(context, -1),
+                -1f, "USER_HOLD_RECORDED");
     }
 
     public static void recordUserHold(Context context, int raw, String event) {
-        recordUserHold(
-                context,
-                raw,
-                getLastLux(context),
-                ForegroundAppTracker.captureForegroundPackage(context),
-                event);
+        recordUserHold(context, raw, -1f, event);
     }
 
-    private static void recordUserHold(
-            Context context, int raw, float lux, String foregroundPackage, String event) {
+    private static void recordUserHold(Context context, int raw, float lux, String event) {
         long now = System.currentTimeMillis();
         prefs(context).edit()
                 .putLong(KEY_USER_HOLD_UNTIL, 0L)
@@ -689,13 +651,11 @@ public final class AutoBrightnessManager implements SensorEventListener {
                 .putLong(KEY_USER_HOLD_AT, now)
                 .putFloat(KEY_USER_HOLD_LUX, lux)
                 .putInt(KEY_USER_HOLD_RAW, raw)
-                .putString(KEY_USER_HOLD_PACKAGE,
-                        foregroundPackage == null ? "" : foregroundPackage)
                 .putString(KEY_AUTO_MODE, Mode.USER_HOLD.name())
                 .apply();
         BrightnessLevels.saveCurrentPercent(context, BrightnessLevels.getPercentForRaw(raw));
-        ProtectionBatteryStats.setPowerState(
-                context, ProtectionPowerState.USER_HOLD_LOW_POWER, event);
+        ProtectionBatteryStats.setPowerState(context,
+                ProtectionPowerState.USER_HOLD_LOW_POWER, event);
         BrightnessLogManager.appendSnapshot(context, event, lux);
     }
 
@@ -705,11 +665,6 @@ public final class AutoBrightnessManager implements SensorEventListener {
             return state.getBoolean(KEY_USER_HOLD_ACTIVE, false);
         }
         return state.getLong(KEY_USER_HOLD_UNTIL, 0L) > System.currentTimeMillis();
-    }
-
-    public static String getUserHoldPackage(Context context) {
-        String packageName = prefs(context).getString(KEY_USER_HOLD_PACKAGE, "");
-        return packageName == null ? "" : packageName.trim();
     }
 
     public static int getUserHoldRaw(Context context) {
@@ -773,10 +728,7 @@ public final class AutoBrightnessManager implements SensorEventListener {
         if (!isUserHoldActive(context)) {
             userHoldText = context.getString(R.string.value_inactive);
         } else {
-            String packageName = getUserHoldPackage(context);
-            userHoldText = packageName.isEmpty()
-                    ? context.getString(R.string.user_hold_screen_scope)
-                    : context.getString(R.string.user_hold_app_scope, packageName);
+            userHoldText = context.getString(R.string.user_hold_environment_scope);
         }
         return context.getString(
                 R.string.auto_diagnostic_text,
@@ -841,7 +793,6 @@ public final class AutoBrightnessManager implements SensorEventListener {
                 .putFloat(KEY_USER_HOLD_LUX, -1f)
                 .remove(KEY_USER_HOLD_RAW)
                 .remove(KEY_USER_HOLD_AT)
-                .remove(KEY_USER_HOLD_PACKAGE)
                 .apply();
     }
 

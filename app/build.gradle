@@ -10,8 +10,8 @@ android {
         applicationId 'com.ericko.redmiscreenbrightness'
         minSdk 24
         targetSdk 35
-        versionCode 105
-        versionName '2.1.4'
+        versionCode 106
+        versionName '2.1.5-adaptive-core-debug'
         manifestPlaceholders = [settingsPermission: 'android.permission.WRITE_' + 'SETTINGS']
     }
 

@@ -1,146 +1,47 @@
-# Screen Protection 2.1.2
+# Screen Protection 2.1.5 Adaptive Core (debug)
 
-A one-button adaptive-brightness controller built specifically for Redmi / HyperOS.
+**Repository:** RT5MM, the original Screen Protection app for Redmi / HyperOS.
+**Package:** `com.ericko.redmiscreenbrightness`. **Minimum:** Android 7 / API 24.
+**Target:** Android API 35. **Release:** `screen-protection-v2.1.5-adaptive-core-debug`.
 
-The app does not reuse Android's automatic-brightness output. While enabled, it temporarily takes ownership of system brightness, reads the physical ambient-light sensor, estimates a stable environmental state, maps that state onto a conservative Redmi raw-brightness curve, and restores the previous Android brightness mode when protection is turned off.
+This build is an **internal experimental adaptation for Redmi K90 on HyperOS 4**, not a certified or device-tested brightness-calibration release.
 
-## Release
+## One-button operation
 
-- Version: **2.1.2**
-- Package: `com.ericko.redmiscreenbrightness`
-- Minimum Android: 7.0 / API 24
-- Target Android: API 35
-- Release tag: `screen-protection-latest`
-- APK: `Screen-Protection-debug.apk`
+The main screen has **exactly one button**: ON or OFF. ON verifies that the ambient-light sensor exists and launches Android's Modify system settings permission when required. Before the custom controller writes brightness, Screen Protection saves the original `SCREEN_BRIGHTNESS_MODE` and switches the mode to **MANUAL**, verifying the change. OFF disables control and restores the previously saved Android brightness mode, including AUTOMATIC if that was previously enabled. Android 13+ notification permission is requested during the same activation flow. There are no separate in-app permission/diagnostics buttons and no extra Quick Settings toggle.
 
-## Control pipeline
+The app uses Android's `TYPE_LIGHT` sensor, **not** a claimed Xiaomi historic auto-brightness curve. It does not read HyperOS's proprietary learned history or change the physical panel hardware directly.
 
-```text
-Physical light sensor
-→ timestamped ambient ring buffer
-→ fast and slow lux estimates
-→ hysteresis + asymmetric debounce
-→ occlusion and deep-night guards
-→ calibrated lux-to-raw curve
-→ raw write hysteresis
-→ bounded transition engine
-→ Android system brightness
-```
+## Brightness and K90 caution
 
-The data types stay separate:
+The original RT5MM low-brightness curve is retained with **raw 7–52** as its protection band. Display-label points include 20% = raw 14, 30% = raw 20, 40% = raw 29, 50% = raw 41 and 60% = raw 52. The related manual HyperBrightnessWidget reference uses 30% = raw 17, optional raw 19 for comfort, and 60% = raw 49.
 
-```text
-Sensor lux        = observation
-Accepted lux      = environmental state
-Target raw        = desired output
-Brightness write  = controlled side effect
-```
+**These raw-to-slider mappings have NOT been measured on the Redmi K90.** A 60% app label does not prove that the Xiaomi system slider is at 60% or that physical luminance is limited to 60% of full display output. Check raw 17/19/49/52 and corresponding system slider positions on the K90 before treating the cap as verified. Strong sunlight/readability or HBM is not guaranteed by a low cap.
 
-Cached lux is diagnostic-only. Screen wake, process recovery and manual refresh always rebuild fresh sensor history before changing brightness.
+## Adaptive Core changes since 2.1.4
 
-## Raw calibration with +3 offset
+- Ambient fast/slow windows **500/1900 ms** (was 700/3200 ms); normal brighten/darken debounces **180/420 ms** (was 350/650 ms). Other confirmation delays are reduced but not removed. Pocket/occlusion guard now **900 ms** (was 1600 ms).
+- **Manual brightness changes are held until a confirmed meaningful change in ambient lux**, not until the foreground app changes. The gate starts when the absolute lux delta reaches `max(12 lux, 45% of anchor)`, stays pending with hysteresis down to `max(7 lux, 22% of anchor)`, and releases after **at least 1100 ms with two independent samples**. Sleep/wake preserves manual intent, but resets the ambient estimator and pending confirmation; only fresh sensor input may release a hold.
+- No Usage Access or app foreground tracking is needed. The obsolete `ForegroundAppTracker` and brightness Quick Settings toggle are removed.
+- Eco sampling after about **5 seconds of stable lux**, with 2-second `STABLE_ECO` and optional 500-ms sensor batching; active 350-ms, fast 100-ms during transitions, and manual hold at 600-ms so it can detect environmental changes. Screen off unregisters the sensor. Actual sensor callbacks are controlled by vendor HAL and may differ.
+- `RT5MM-Latency` logs the measured elapsed milliseconds between a significant sensor event and a **successful Settings write**. It does not measure when the panel reaches its physical luminance. The latest recorded value is displayed as text in the one-button app.
+- Additional write gating prevents a queued brightness transition from writing after OFF. Mode restore and switch now require read-back confirmation.
 
-Every calibrated Redmi raw level is shifted upward by 3 while preserving the original spacing and interpolation behavior:
+## Limitations and safety
 
-| Display level | System raw |
-|---:|---:|
-| 20% | 14 |
-| 30% | 20 |
-| 40% | 29 |
-| 50% | 41 |
-| 60% | 52 |
+The absolute raw values and even the raw scale are device- and firmware-dependent. The single button cannot silently grant `WRITE_SETTINGS`. On HyperOS, foreground services can still be killed or restricted; unlocking battery restrictions or autostart requires manual OEM settings when applicable. If HyperOS force-kills the process, Android can remain in MANUAL until RT5MM is reopened and turned OFF or the saved mode is restored. Android system permissions are not a guarantee against force-stop. No root, Magisk, Shizuku, ADB helper, overlay, Extra Dim, or third-party runtime helper is used.
 
-Intermediate values use monotonic logarithmic interpolation. The protected curve is clamped to raw **7–52**.
+A foreground service remains active while the screen is on; reduced polling **is a hypothesis about battery efficiency**, not a measured saving.
 
-## Ambient estimator
+## Acceptance checklist for Redmi K90
 
-- Fast horizon: approximately 700 ms.
-- Slow horizon: approximately 3.2 seconds.
-- Brightening is faster than darkening.
-- Strong sunlight has a guarded readable intermediate step.
-- Sudden darkness has a safe intermediate settle.
-- Raw 7–9 requires confirmed deep-night evidence.
-- A dedicated occlusion guard rejects a brief hand or pocket cover after a bright environment.
-- Hysteresis prevents repeated writes near a threshold.
+1. Verify ON sets `SCREEN_BRIGHTNESS_MODE=MANUAL`, OFF returns to the precise prior mode.
+2. Test dark-to-bright and bright-to-dark reaction using repeatable light conditions and inspect the latency readout. Watch for flicker under small lux fluctuations.
+3. Adjust system brightness manually, move through mild light fluctuations, then move to a much brighter or darker place for at least 1.1s: the held level must release only for sustained meaningful change, including across screen off/on.
+4. Compare baseline RT5MM 2.1.4 to 2.1.5 with matched screen-on time, brightness, ambient conditions, battery temperature and app workload. Do not attribute total phone battery differences to the sensor service without controls.
+5. Compare system slider position and visible luminance for raw **17, 19, 49, 52** on K90; confirm both dim-room comfort and sunlight readability.
+6. Check long foreground operation, screen on/off, OS process reclaim, and reboot behavior on HyperOS 4.
 
-## Adaptive sampling is active
+## Tests and build
 
-The sampling policy is connected directly to Android sensor registration:
-
-- `FAST_TRACK`: 100 ms after wake or a meaningful ambient transition.
-- `ACTIVE_TRACK`: 400 ms while the environment is evolving.
-- `STABLE_ECO`: 1.5 seconds after sustained stability.
-- `USER_HOLD_ECO`: 3 seconds while respecting a manual user brightness choice.
-- `SCREEN_OFF_SLEEP`: sensor completely unregistered.
-
-Minimum mode dwell time prevents register/unregister thrashing. An in-process
-software gate also enforces these intervals when a vendor sensor HAL delivers
-callbacks faster than the requested Android rate.
-
-## Manual user intent
-
-A real external brightness change is distinguished from an app write by matching the exact raw value and a short observer window. A stable manual change enters user hold rather than being overwritten.
-
-- With Usage Access granted, the chosen level remains unchanged for as long as the same app stays in the foreground.
-- Moving to another app releases the hold within the low-power three-second check interval and rebuilds fresh ambient history.
-- Turning the screen off always releases the hold; turning it back on resumes protection from fresh sensor data.
-- Without Usage Access, the safe fallback is to keep the chosen level until the screen turns off.
-- Android SystemUI is ignored when identifying the foreground app, so opening the notification shade to move the brightness slider does not immediately release the hold.
-- Lux changes never expire a manual hold while its app session is still active.
-
-## Battery behavior
-
-- The light sensor is off whenever the display is off.
-- Sampling slows automatically in stable conditions.
-- System brightness is observer/write cached instead of querying SettingsProvider on every sensor sample.
-- Diagnostic logging is RAM-first and bounded.
-- Diagnostics are persisted at most once per minute during operation.
-- Notification and lifecycle health updates are event-driven; there are no periodic background wakeups.
-- Normal transitions use at most three writes.
-- Duplicate targets and raw differences of one step are skipped.
-- SharedPreferences writes are throttled and reserved for meaningful state.
-
-## App experience
-
-The main screen exposes one primary protection switch, live environment and brightness state, required setup, optional reliability recommendations, and expandable diagnostics.
-
-Required:
-
-- Modify system settings.
-- A hardware ambient-light sensor.
-
-Recommended on HyperOS:
-
-- Usage Access for app-aware manual brightness hold.
-- Notification permission on Android 13+.
-- Review battery optimization settings if HyperOS stops the service.
-- Autostart / No restrictions / Lock in Recents when available.
-
-Notification and battery recommendations improve persistence but do not incorrectly block startup.
-
-The interface, foreground notification, Quick Settings tile and diagnostics are
-available in both English and Vietnamese through Android locale resources.
-
-## Quick Settings and recovery
-
-- Quick Settings tile toggles protection directly.
-- Boot and package replacement restore protection only when it was already enabled.
-- The foreground service sleeps with the screen off and resumes with fresh ambient history.
-- The previous Android brightness mode is restored when protection stops.
-
-## Automated verification
-
-GitHub Actions runs unit tests before every APK build. Coverage includes:
-
-- weighted ambient history;
-- newest-sample influence;
-- sunlight rescue;
-- safe dark settle;
-- zero-timestamp warmup;
-- adaptive sampling state transitions and anti-thrash behavior;
-- manual hold retention, app-change release and screen-off fallback policy;
-- bounded transition calculations;
-- monotonic lux-to-raw output;
-- shifted Redmi raw anchors.
-
-The main workflow publishes the latest successful `main` APK under the `screen-protection-latest` release tag.
+GitHub Actions executes existing and expanded `testDebugUnitTest` before `assembleDebug`. The successful debug APK is attached to the versioned **2.1.5 Adaptive Core debug** prerelease and the existing `screen-protection-latest` channel. Debug APKs are Android Gradle Plugin debug-signed; no release certificate is needed. CI tests exercise pure logic, not actual Redmi K90 sensor HAL, OLED luminance, boot behavior, or battery consumption.

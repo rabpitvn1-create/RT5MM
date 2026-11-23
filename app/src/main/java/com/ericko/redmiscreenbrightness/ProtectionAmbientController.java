@@ -7,20 +7,20 @@ package com.ericko.redmiscreenbrightness;
  */
 public final class ProtectionAmbientController {
     private static final long BUFFER_HORIZON_MS = 8000L;
-    private static final long FAST_HORIZON_MS = 700L;
-    private static final long SLOW_HORIZON_MS = 3200L;
+    private static final long FAST_HORIZON_MS = 500L;
+    private static final long SLOW_HORIZON_MS = 1900L;
 
-    private static final long NORMAL_BRIGHTEN_DEBOUNCE_MS = 350L;
-    private static final long STRONG_BRIGHTEN_DEBOUNCE_MS = 100L;
-    private static final long FAST_ONLY_BRIGHTEN_DEBOUNCE_MS = 140L;
-    private static final long NORMAL_DARKEN_DEBOUNCE_MS = 650L;
-    private static final long STRONG_DARKEN_DEBOUNCE_MS = 220L;
-    private static final long FAST_ONLY_DARKEN_DEBOUNCE_MS = 260L;
-    private static final long DEEP_NIGHT_DEBOUNCE_MS = 3000L;
+    private static final long NORMAL_BRIGHTEN_DEBOUNCE_MS = 180L;
+    private static final long STRONG_BRIGHTEN_DEBOUNCE_MS = 80L;
+    private static final long FAST_ONLY_BRIGHTEN_DEBOUNCE_MS = 100L;
+    private static final long NORMAL_DARKEN_DEBOUNCE_MS = 420L;
+    private static final long STRONG_DARKEN_DEBOUNCE_MS = 160L;
+    private static final long FAST_ONLY_DARKEN_DEBOUNCE_MS = 250L;
+    private static final long DEEP_NIGHT_DEBOUNCE_MS = 1400L;
 
     private static final long INITIAL_NORMAL_WARMUP_MS = 120L;
-    private static final long INITIAL_DEEP_NIGHT_WARMUP_MS = 2200L;
-    private static final long FAST_EVIDENCE_WINDOW_MS = 700L;
+    private static final long INITIAL_DEEP_NIGHT_WARMUP_MS = 1100L;
+    private static final long FAST_EVIDENCE_WINDOW_MS = 550L;
     private static final long INTERMEDIATE_COOLDOWN_MS = 900L;
 
     private static final float SUNLIGHT_MIN_LUX = 500f;

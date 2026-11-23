@@ -139,18 +139,17 @@ public final class BrightnessLevels {
             SharedPreferences state = prefs(app);
             int currentMode = getSystemBrightnessMode(app);
             if (!state.getBoolean(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID, false)) {
-                state.edit()
+                if (!state.edit()
                         .putInt(KEY_PREVIOUS_BRIGHTNESS_MODE, currentMode)
                         .putBoolean(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID, true)
-                        .apply();
+                        .commit()) return false;
             }
             if (currentMode != Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL) {
-                return Settings.System.putInt(
-                        app.getContentResolver(),
+                if (!Settings.System.putInt(app.getContentResolver(),
                         Settings.System.SCREEN_BRIGHTNESS_MODE,
-                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL);
+                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)) return false;
             }
-            return true;
+            return getSystemBrightnessMode(app) == Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL;
         } catch (Throwable ignored) {
             return false;
         }
@@ -167,13 +166,13 @@ public final class BrightnessLevels {
                     Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL);
             boolean restored = Settings.System.putInt(
                     app.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS_MODE, previous);
-            if (restored) {
-                state.edit()
+            if (restored && getSystemBrightnessMode(app) == previous) {
+                return state.edit()
                         .remove(KEY_PREVIOUS_BRIGHTNESS_MODE)
                         .remove(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID)
-                        .apply();
+                        .commit();
             }
-            return restored;
+            return false;
         } catch (Throwable ignored) {
             return false;
         }
@@ -204,7 +203,9 @@ public final class BrightnessLevels {
     }
 
     private static boolean writeRaw(Context context, int raw) {
-        if (!canWrite(context)) return false;
+        // A pending transition may outlive the user's OFF tap for one main-loop tick.
+        // Gate all app writes before touching the system or restoring its mode.
+        if (!AutoBrightnessManager.isAutoEnabled(context) || !canWrite(context)) return false;
         try {
             Context app = context.getApplicationContext();
             if (!captureAndForceManualMode(app)) return false;
@@ -219,6 +220,7 @@ public final class BrightnessLevels {
             if (ok) {
                 cachedSystemRaw = raw;
                 recordAppWrite(app, raw);
+                ProtectionLatencyProbe.onApplied(raw);
             }
             return ok;
         } catch (Throwable ignored) {
