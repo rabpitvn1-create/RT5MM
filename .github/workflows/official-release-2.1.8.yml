@@ -1,0 +1,143 @@
+name: RT5MM 2.1.8 Obsidian Precision Official Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'scripts/check-android-launch.sh'
+      - '.github/workflows/android-launch.yml'
+      - '.github/workflows/official-release-2.1.8.yml'
+      - 'RELEASE_NOTES_2.1.8.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screen-protection-v2.1.8-obsidian
+  cancel-in-progress: false
+
+env:
+  TAG: screen-protection-v2.1.8-obsidian-precision
+  APK_NAME: Screen-Protection-2.1.8-Obsidian-Precision-release.apk
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    outputs:
+      version_matches: ${{ steps.version.outputs.matches }}
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+      - name: Check release version
+        id: version
+        shell: bash
+        run: |
+          if grep -Eq "^[[:space:]]*versionName '2\.1\.8'[[:space:]]*$" app/build.gradle; then
+            echo 'matches=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Set up Java 17
+        if: steps.version.outputs.matches == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        if: steps.version.outputs.matches == 'true'
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK 35
+        if: steps.version.outputs.matches == 'true'
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Set up Gradle 8.7
+        if: steps.version.outputs.matches == 'true'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Run unit tests
+        if: steps.version.outputs.matches == 'true'
+        run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Lint and assemble release APK
+        if: steps.version.outputs.matches == 'true'
+        shell: bash
+        run: |
+          if ! gradle --no-daemon :app:lintRelease :app:assembleRelease; then
+            find app/build -name 'lint-results-release.txt' -type f -exec cat {} +
+            exit 1
+          fi
+      - name: Verify package, version and debug signature
+        if: steps.version.outputs.matches == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          BADGING=$("$TOOLS/aapt" dump badging "$APK")
+          grep -Fq "package: name='com.ericko.redmiscreenbrightness' versionCode='109' versionName='2.1.8'" <<< "$BADGING"
+          SIGNATURE=$("$TOOLS/apksigner" verify --verbose --print-certs "$APK")
+          echo "$SIGNATURE"
+          grep -Fq 'CN=Android Debug' <<< "$SIGNATURE"
+          NEW_CERT=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$SIGNATURE")
+          test -n "$NEW_CERT"
+          # Certificate of the APK published as the official 2.1.7 release.
+          PREVIOUS_CERT=9f8282c1de83346f5f9ab25939211e7adf35c3678e5f7a33449afb17f84e0e5e
+          mkdir -p release
+          cp "$APK" "release/$APK_NAME"
+          (cd release && sha256sum "$APK_NAME" > SHA256SUMS.txt)
+          cp RELEASE_NOTES_2.1.8.md release/RELEASE_NOTES.md
+          if [[ "$NEW_CERT" == "$PREVIOUS_CERT" ]]; then
+            printf '\n**Đang dùng 2.1.7 chính thức:** Hai APK cùng chứng chỉ, nên không cần gỡ bản 2.1.7 để cài đè.\n' >> release/RELEASE_NOTES.md
+          else
+            printf '\n**Đang dùng 2.1.7 chính thức:** Hai APK khác chứng chỉ. Cần gỡ 2.1.7 trước khi cài 2.1.8.\n' >> release/RELEASE_NOTES.md
+          fi
+          printf '\nBuild commit: %s\n\nSHA-256: %s\n' "$GITHUB_SHA" "$(cut -d ' ' -f1 release/SHA256SUMS.txt)" >> release/RELEASE_NOTES.md
+      - name: Upload the exact APK, checksum and release notes
+        if: steps.version.outputs.matches == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RT5MM-2.1.8-Obsidian-Precision-release
+          path: release/
+          if-no-files-found: error
+
+  smoke-launch:
+    needs: test-build
+    if: needs.test-build.outputs.version_matches == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [35, 36]
+    uses: ./.github/workflows/android-launch.yml
+    with:
+      artifact: RT5MM-2.1.8-Obsidian-Precision-release
+      apk: Screen-Protection-2.1.8-Obsidian-Precision-release.apk
+      api: ${{ matrix.api }}
+
+  publish:
+    needs: [test-build, smoke-launch]
+    if: needs.test-build.outputs.version_matches == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the tested release APK
+        uses: actions/download-artifact@v4
+        with:
+          name: RT5MM-2.1.8-Obsidian-Precision-release
+          path: release
+      - name: Publish official Latest Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo 'Release exists. Preserving the published APK.'
+            exit 0
+          fi
+          (cd release && sha256sum -c SHA256SUMS.txt)
+          gh release create "$TAG" "release/$APK_NAME" release/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title 'Screen Protection 2.1.8 Obsidian Precision' \
+            --notes-file release/RELEASE_NOTES.md --latest

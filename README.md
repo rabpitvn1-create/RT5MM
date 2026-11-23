@@ -1,14 +1,14 @@
-# Screen Protection 2.1.7 Obsidian Precision
+# Screen Protection 2.1.8 Obsidian Precision
 
 **Repository:** RT5MM, the original Screen Protection app for Redmi / HyperOS.
 **Package:** `com.ericko.redmiscreenbrightness`. **Minimum:** Android 7 / API 24.
-**Target:** Android API 35. **Latest official release:** `screen-protection-v2.1.7-obsidian-precision` (runner debug-key signed). Earlier releases are preserved.
+**Target:** Android API 35. **Latest official release:** `screen-protection-v2.1.8-obsidian-precision` (runner debug-key signed). Earlier releases are preserved.
 
 This build is an **internal experimental adaptation for Redmi K90 on HyperOS 4**, not a certified or device-tested brightness-calibration release.
 
 ## Obsidian Precision interface
 
-Version 2.1.7 adds edge-to-edge safe areas, an adaptive 144dp dark power button, separate service and lux states, and a HyperOS China background setup guide. It keeps the adaptive controller from 2.1.5. The dashboard shows Raw / cap 52 and lux, and requires confirmation from the current service session before showing protection. See [2.1.7 release notes](RELEASE_NOTES_2.1.7.md).
+Version 2.1.8 fixes a cold-launch crash from looking up the insets controller before the window decor exists. The Obsidian interface introduced in 2.1.7 includes edge-to-edge safe areas, an adaptive 144dp dark power button, separate service and lux states, and a HyperOS China background setup guide. It keeps the adaptive controller from 2.1.5. The dashboard shows Raw / cap 52 and lux, and requires confirmation from the current service session before showing protection. See [2.1.8 release notes](RELEASE_NOTES_2.1.8.md).
 
 ## One-button operation
 
@@ -50,4 +50,4 @@ A foreground service remains active while the screen is on; reduced polling **is
 
 ## Tests and build
 
-The official workflow runs `testDebugUnitTest` before `assembleRelease`, explicitly signs that release build with the runner's **debug key**, verifies the APK signature with `apksigner`, emits SHA-256 and publishes a **non-prerelease Latest** GitHub Release. See [official 2.1.7 release notes](RELEASE_NOTES_2.1.7.md) for details and signing caveats. The earlier debug pre-release is preserved. CI tests exercise pure logic, not actual Redmi K90 sensor HAL, OLED luminance, boot behavior, or battery consumption.
+The official workflow runs `testDebugUnitTest` before `assembleRelease`, explicitly signs that release build with the runner's **debug key**, verifies the APK signature with `apksigner`, emits SHA-256, cold-launches the signed APK on Android 15 and 16 emulators, and publishes a **non-prerelease Latest** GitHub Release. See [official 2.1.8 release notes](RELEASE_NOTES_2.1.8.md) for details and signing caveats. The earlier debug pre-release is preserved. CI tests exercise pure logic, not actual Redmi K90 sensor HAL, OLED luminance, boot behavior, or battery consumption.

@@ -84,3 +84,13 @@ jobs:
               --latest=false
           fi
 
+
+  smoke-launch:
+    needs: build
+    permissions:
+      contents: read
+    uses: ./.github/workflows/android-launch.yml
+    with:
+      artifact: Screen-Protection-debug-apk
+      apk: Screen-Protection-debug.apk
+      api: 35

@@ -1,0 +1,43 @@
+name: Android launch smoke test
+
+on:
+  workflow_call:
+    inputs:
+      artifact:
+        required: true
+        type: string
+      apk:
+        required: true
+        type: string
+      api:
+        required: true
+        type: number
+
+permissions:
+  contents: read
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APK_NAME: ${{ inputs.apk }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}
+          path: smoke-apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Cold launch and verify the main dashboard
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ inputs.api }}
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: bash scripts/check-android-launch.sh "smoke-apk/$APK_NAME"
