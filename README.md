@@ -1,8 +1,8 @@
-# Screen Protection 2.1.5 Adaptive Core (debug)
+# Screen Protection 2.1.5 Adaptive Core
 
 **Repository:** RT5MM, the original Screen Protection app for Redmi / HyperOS.
 **Package:** `com.ericko.redmiscreenbrightness`. **Minimum:** Android 7 / API 24.
-**Target:** Android API 35. **Release:** `screen-protection-v2.1.5-adaptive-core-debug`.
+**Target:** Android API 35. **Official release:** `screen-protection-v2.1.5-adaptive-core` (internally debug-key signed). **Preserved debug pre-release:** `screen-protection-v2.1.5-adaptive-core-debug`.
 
 This build is an **internal experimental adaptation for Redmi K90 on HyperOS 4**, not a certified or device-tested brightness-calibration release.
 
@@ -46,4 +46,4 @@ A foreground service remains active while the screen is on; reduced polling **is
 
 ## Tests and build
 
-GitHub Actions executes existing and expanded `testDebugUnitTest` before `assembleDebug`. The successful debug APK is attached to the versioned **2.1.5 Adaptive Core debug** prerelease and the existing `screen-protection-latest` channel. Debug APKs are Android Gradle Plugin debug-signed; no release certificate is needed. CI tests exercise pure logic, not actual Redmi K90 sensor HAL, OLED luminance, boot behavior, or battery consumption.
+The official workflow runs `testDebugUnitTest` before `assembleRelease`, explicitly signs that release build with the runner's **debug key**, verifies the APK signature with `apksigner`, emits SHA-256 and publishes a **non-prerelease Latest** GitHub Release. See [official release notes](RELEASE_NOTES_2.1.5.md) for details and signing caveats. The earlier debug pre-release is preserved. CI tests exercise pure logic, not actual Redmi K90 sensor HAL, OLED luminance, boot behavior, or battery consumption.

@@ -60,7 +60,7 @@ jobs:
           path: release/Screen-Protection-debug.apk
 
       - name: Publish latest APK release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: screen-protection-latest
@@ -76,11 +76,11 @@ jobs:
             gh release edit "$TAG_NAME" \
               --title "Screen Protection APK" \
               --notes "Latest debug APK built from main commit $GITHUB_SHA." \
-              --latest
+              --latest=false
           else
             gh release create "$TAG_NAME" "$APK_PATH" \
               --title "Screen Protection APK" \
               --notes "Latest debug APK built from main commit $GITHUB_SHA." \
-              --latest
+              --latest=false
           fi
 

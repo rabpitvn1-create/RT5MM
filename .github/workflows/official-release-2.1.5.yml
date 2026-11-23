@@ -1,0 +1,97 @@
+name: RT5MM 2.1.5 Adaptive Core Official Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/build.gradle'
+      - '.github/workflows/official-release-2.1.5.yml'
+      - 'RELEASE_NOTES_2.1.5.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screen-protection-v2.1.5-adaptive-core
+  cancel-in-progress: false
+
+jobs:
+  test-build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android SDK 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Run unit tests before release build
+        run: gradle --no-daemon :app:testDebugUnitTest
+
+      - name: Assemble signed release APK
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify APK signature, prepare asset and SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          ASSET=Screen-Protection-2.1.5-Adaptive-Core-release.apk
+          test -s "$APK"
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          mkdir -p release
+          cp "$APK" "release/$ASSET"
+          (cd release && sha256sum "$ASSET" > SHA256SUMS.txt)
+          echo "APK_SHA256=$(cut -d ' ' -f1 release/SHA256SUMS.txt)" >> "$GITHUB_ENV"
+          echo "Release APK checksum:"
+          cat release/SHA256SUMS.txt
+          echo "Release APK size:"
+          wc -c "release/$ASSET"
+
+      - name: Upload official release APK and checksum as Actions artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: RT5MM-2.1.5-Adaptive-Core-release
+          path: |
+            release/Screen-Protection-2.1.5-Adaptive-Core-release.apk
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Publish non-prerelease and make Latest
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=screen-protection-v2.1.5-adaptive-core
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Official release already exists. Refusing to overwrite published APK."
+            exit 0
+          fi
+          cp RELEASE_NOTES_2.1.5.md release/RELEASE_NOTES.md
+          printf '\nBuild commit: `%s`\n\nAPK SHA-256: `%s`\n' \
+            "$GITHUB_SHA" "$APK_SHA256" >> release/RELEASE_NOTES.md
+          gh release create "$TAG" \
+            release/Screen-Protection-2.1.5-Adaptive-Core-release.apk \
+            release/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" \
+            --title "Screen Protection 2.1.5 Adaptive Core" \
+            --notes-file release/RELEASE_NOTES.md \
+            --latest

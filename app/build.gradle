@@ -11,8 +11,17 @@ android {
         minSdk 24
         targetSdk 35
         versionCode 106
-        versionName '2.1.5-adaptive-core-debug'
+        versionName '2.1.5'
         manifestPlaceholders = [settingsPermission: 'android.permission.WRITE_' + 'SETTINGS']
+    }
+
+    // Internal distribution only: sign release build with the runner-generated
+    // Android debug key. This is NOT a persistent production signing identity.
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
     }
 
     compileOptions {
