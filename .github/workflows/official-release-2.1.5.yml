@@ -1,11 +1,5 @@
 name: RT5MM 2.1.5 Adaptive Core Official Release
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'app/**'
-      - '.github/workflows/official-release-2.1.5.yml'
-      - 'RELEASE_NOTES_2.1.5.md'
   workflow_dispatch:
 
 permissions:

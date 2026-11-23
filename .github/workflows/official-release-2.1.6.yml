@@ -1,0 +1,79 @@
+name: RT5MM 2.1.6 Obsidian Precision Official Release
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - '.github/workflows/official-release-2.1.6.yml'
+      - 'RELEASE_NOTES_2.1.6.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screen-protection-v2.1.6-obsidian
+  cancel-in-progress: false
+
+jobs:
+  test-build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Unit tests must succeed
+        run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Assemble release APK
+        run: gradle --no-daemon :app:assembleRelease
+      - name: Verify signature and calculate SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          NAME=Screen-Protection-2.1.6-Obsidian-Precision-release.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          mkdir -p release
+          cp "$APK" "release/$NAME"
+          (cd release && sha256sum "$NAME" > SHA256SUMS.txt)
+          echo "APK_SHA256=$(cut -d ' ' -f1 release/SHA256SUMS.txt)" >> "$GITHUB_ENV"
+          cat release/SHA256SUMS.txt
+          wc -c "release/$NAME"
+      - name: Upload APK and checksum artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RT5MM-2.1.6-Obsidian-Precision-release
+          path: |
+            release/Screen-Protection-2.1.6-Obsidian-Precision-release.apk
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+      - name: Publish official Latest Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=screen-protection-v2.1.6-obsidian-precision
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release exists; preserving published APK."
+            exit 0
+          fi
+          cp RELEASE_NOTES_2.1.6.md release/RELEASE_NOTES.md
+          printf '\nBuild commit: %s\n\nSHA-256: %s\n' "$GITHUB_SHA" "$APK_SHA256" >> release/RELEASE_NOTES.md
+          gh release create "$TAG" release/Screen-Protection-2.1.6-Obsidian-Precision-release.apk release/SHA256SUMS.txt --target "$GITHUB_SHA" --title "Screen Protection 2.1.6 Obsidian Precision" --notes-file release/RELEASE_NOTES.md --latest

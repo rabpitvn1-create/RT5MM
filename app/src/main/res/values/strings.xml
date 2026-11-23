@@ -113,4 +113,35 @@
     <string name="log_events">Events:</string>
     <string name="log_no_events">No events yet.</string>
     <string name="user_hold_environment_scope">until ambient light changes substantially</string>
+
+    <string name="obsidian_brand">SCREEN PROTECTION</string>
+    <string name="obsidian_off">Protection is off</string>
+    <string name="obsidian_off_desc">Quiet brightness care, whenever you need it.</string>
+    <string name="obsidian_enable">Enable protection</string>
+    <string name="obsidian_disable">Disable protection</string>
+    <string name="obsidian_permission">Brightness permission needed</string>
+    <string name="obsidian_permission_desc">Allow Modify system settings to enable protection.</string>
+    <string name="obsidian_grant_and_enable">Grant and enable</string>
+    <string name="obsidian_starting">Activating</string>
+    <string name="obsidian_starting_desc">Confirming brightness control.</string>
+    <string name="obsidian_protecting">Protecting</string>
+    <string name="obsidian_protecting_desc">Screen brightness follows the ambient light.</string>
+    <string name="obsidian_hold">Holding your level</string>
+    <string name="obsidian_hold_desc">Your setting stays until light changes significantly.</string>
+    <string name="obsidian_waiting">Reading ambient light</string>
+    <string name="obsidian_waiting_desc">Waiting for a fresh sensor reading.</string>
+    <string name="obsidian_service_error">Protection needs recovery</string>
+    <string name="obsidian_service_error_desc">Controller is not confirmed active. Disable, then enable again.</string>
+    <string name="obsidian_restore_error">Could not restore brightness mode</string>
+    <string name="obsidian_restore_desc">The previous Android brightness mode is not yet restored.</string>
+    <string name="obsidian_try_restore">Try restoring</string>
+    <string name="obsidian_sensor_error_desc">No ambient light sensor is available.</string>
+    <string name="obsidian_raw_label">RAW / CAP 52</string>
+    <string name="obsidian_raw_unavailable">Raw —</string>
+    <string name="obsidian_raw_value">Raw %1$d</string>
+    <string name="obsidian_lux_unavailable">— lx</string>
+    <string name="obsidian_light_low">Low ambient light</string>
+    <string name="obsidian_light_medium">Medium ambient light</string>
+    <string name="obsidian_light_high">High ambient light</string>
+    <string name="obsidian_light_unknown">Waiting for light</string>
 </resources>

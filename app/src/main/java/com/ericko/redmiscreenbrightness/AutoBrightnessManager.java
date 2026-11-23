@@ -95,6 +95,7 @@ public final class AutoBrightnessManager implements SensorEventListener {
         sensorManager = (SensorManager) appContext.getSystemService(Context.SENSOR_SERVICE);
         lightSensor = sensorManager == null ? null : sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
         transitionEngine = new ProtectionTransitionEngine(appContext, handler);
+        ProtectionUiTelemetry.sensorRegistrationChanged(false);
         lastPersistedLux = prefs(appContext).getFloat(KEY_LAST_LUX, -1f);
         lastRamLux = lastPersistedLux;
         if (lastPersistedLux >= 0f) liveLux = lastPersistedLux;
@@ -314,6 +315,7 @@ public final class AutoBrightnessManager implements SensorEventListener {
         }
         ProtectionBatteryStats.recordSensorSample(appContext);
         float sensorLux = clampLux(event.values[0]);
+        ProtectionUiTelemetry.onValidSensorSample(event.values[0]);
         ProtectionLatencyProbe.observeSensor(now, sensorLux);
         float guardedLux = applyOcclusionGuard(sensorLux, now);
 
@@ -500,6 +502,7 @@ public final class AutoBrightnessManager implements SensorEventListener {
             registered = sensorManager.registerListener(
                     this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL, handler);
         }
+        ProtectionUiTelemetry.sensorRegistrationChanged(registered);
         if (registered) {
             ProtectionBatteryStats.recordSensorRegistered(appContext);
             ProtectionBatteryStats.setPowerState(
@@ -525,6 +528,7 @@ public final class AutoBrightnessManager implements SensorEventListener {
         }
         registered = false;
         registeredSamplingMode = null;
+        ProtectionUiTelemetry.sensorRegistrationChanged(false);
     }
 
     private void applySamplingMode(ProtectionSamplingController.Mode desired, String reason) {
