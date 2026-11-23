@@ -170,7 +170,7 @@ final class ObsidianDashboard extends ScrollView {
         value.setSpan(new AbsoluteSizeSpan(sp(getContext(), 13)), start, value.length(),
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         TypefaceSpan regular = Build.VERSION.SDK_INT >= 28
-                ? new TypefaceSpan(android.graphics.Typeface.create("sans-serif", 0))
+                ? new TypefaceSpan(android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL))
                 : new TypefaceSpan("sans-serif");
         value.setSpan(regular, start, value.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }

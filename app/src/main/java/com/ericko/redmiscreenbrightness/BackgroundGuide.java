@@ -123,7 +123,7 @@ final class BackgroundGuide extends ScrollView {
         confirmation.setText(R.string.guide_self_confirmed);
         confirmation.setTextColor(SECONDARY);
         confirmation.setTextSize(13);
-        confirmation.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0));
+        confirmation.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         confirmation.setIncludeFontPadding(false);
         if (Build.VERSION.SDK_INT >= 28) confirmation.setLineHeight(sp(activity, 18));
         confirmation.setButtonTintList(ColorStateList.valueOf(FOCUS));
