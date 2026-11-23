@@ -154,7 +154,6 @@ public final class BrightnessLogManager {
                 + " | appMode=" + AutoBrightnessManager.getDisplayMode(
                         context, AutoBrightnessManager.getSavedMode(context))
                 + " | userHoldActive=" + AutoBrightnessManager.isUserHoldActive(context)
-                + " | userHoldPackage=" + AutoBrightnessManager.getUserHoldPackage(context)
                 + "\n";
     }
 

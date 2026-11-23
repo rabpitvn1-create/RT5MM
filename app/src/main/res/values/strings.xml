@@ -112,4 +112,5 @@
     <string name="log_export_header">Redmi Screen Protection diagnostic log\nDevice mode: %1$s\nProtection: %2$s\nApp mode: %3$s\nCurrent raw: %4$d\nCurrent bucket: %5$d%%\nLast lux: %6$s</string>
     <string name="log_events">Events:</string>
     <string name="log_no_events">No events yet.</string>
+    <string name="user_hold_environment_scope">until ambient light changes substantially</string>
 </resources>

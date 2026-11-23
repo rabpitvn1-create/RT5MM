@@ -114,4 +114,5 @@
     <string name="log_export_header">Nhật ký chẩn đoán Bảo vệ màn hình Redmi\nChế độ thiết bị: %1$s\nBảo vệ: %2$s\nChế độ ứng dụng: %3$s\nRaw hiện tại: %4$d\nMức hiện tại: %5$d%%\nLux gần nhất: %6$s</string>
     <string name="log_events">Sự kiện:</string>
     <string name="log_no_events">Chưa có sự kiện.</string>
+    <string name="user_hold_environment_scope">cho đến khi ánh sáng môi trường thay đổi đáng kể</string>
 </resources>
