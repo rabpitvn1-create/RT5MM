@@ -6,7 +6,7 @@
 
     <string name="setup_title">Thiết lập</string>
     <string name="action_allow_brightness">Cho phép điều khiển độ sáng</string>
-    <string name="action_allow_usage_access">Cho phép giữ độ sáng theo ứng dụng</string>
+
     <string name="action_allow_notifications">Cho phép thông báo</string>
     <string name="action_open_battery_settings">Mở cài đặt tối ưu pin</string>
     <string name="action_open_hyperos_settings">Mở cài đặt chạy nền HyperOS</string>
@@ -28,7 +28,7 @@
 
     <string name="setup_brightness_control">Điều khiển độ sáng</string>
     <string name="setup_light_sensor">Cảm biến ánh sáng</string>
-    <string name="setup_usage_access">Giữ độ sáng theo ứng dụng</string>
+
     <string name="setup_notifications">Thông báo</string>
     <string name="setup_battery_optimization">Tối ưu pin</string>
     <string name="setup_item_ready">✓ %1$s — đã sẵn sàng\n</string>
