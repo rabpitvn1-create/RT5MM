@@ -71,6 +71,14 @@ public final class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        // Re-enter the foreground service if HyperOS reclaimed the process.
+        // Do not feed old cached lux to the ambient controller.
+        if (AutoBrightnessManager.isAutoEnabled(this)) {
+            AutoBrightnessService.start(this);
+        } else if (BrightnessLevels.hasPendingModeRestore(this)
+                && Settings.System.canWrite(this)) {
+            BrightnessLevels.restorePreviousBrightnessMode(this);
+        }
         if (awaitingPermission) {
             awaitingPermission = false;
             if (Settings.System.canWrite(this)) startProtection();
@@ -132,7 +140,9 @@ public final class MainActivity extends Activity {
         int raw = BrightnessLevels.getSystemRaw(this, -1);
         long latency = ProtectionLatencyProbe.getLatestLatencyMs();
         details.setText(enabled ? "Adaptive Core active. Android auto brightness: MANUAL"
-                : "Protection is off. Android's previous brightness mode is restored.");
+                : (BrightnessLevels.hasPendingModeRestore(this)
+                    ? "Protection is off. Brightness mode restoration is pending."
+                    : "Protection is off. Android's previous brightness mode is restored."));
         status.setText((lux >= 0 ? String.format(java.util.Locale.US, "Last ambient: %.1f lx", lux)
                 : "Waiting for fresh sensor data")
                 + (raw >= 0 ? " | raw " + raw : "")

@@ -147,12 +147,23 @@ public final class BrightnessLevels {
             if (currentMode != Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL) {
                 if (!Settings.System.putInt(app.getContentResolver(),
                         Settings.System.SCREEN_BRIGHTNESS_MODE,
-                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)) return false;
+                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)) {
+                    restorePreviousBrightnessMode(app);
+                    return false;
+                }
             }
-            return getSystemBrightnessMode(app) == Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL;
+            if (getSystemBrightnessMode(app) != Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL) {
+                restorePreviousBrightnessMode(app);
+                return false;
+            }
+            return true;
         } catch (Throwable ignored) {
             return false;
         }
+    }
+
+    public static boolean hasPendingModeRestore(Context context) {
+        return prefs(context).getBoolean(KEY_PREVIOUS_BRIGHTNESS_MODE_VALID, false);
     }
 
     public static boolean restorePreviousBrightnessMode(Context context) {
