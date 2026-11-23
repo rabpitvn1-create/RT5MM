@@ -207,9 +207,9 @@ final class ObsidianDashboard extends ScrollView {
             setClipToPadding(false);
 
             textSlot = new FrameLayout(context);
-            titleProbe = text(context, 30, 36, 600, PRIMARY);
-            detailProbe = text(context, 14, 20, 400, SECONDARY);
-            buttonProbe = text(context, 16, 22, 600, PRIMARY);
+            titleProbe = measurementText(context, 30, 36, 600, PRIMARY);
+            detailProbe = measurementText(context, 14, 20, 400, SECONDARY);
+            buttonProbe = measurementText(context, 16, 22, 600, PRIMARY);
             LinearLayout textStack = new LinearLayout(context);
             textStack.setOrientation(VERTICAL);
             textStack.addView(title, row(0));
@@ -259,6 +259,16 @@ final class ObsidianDashboard extends ScrollView {
                 height = Math.max(height, probe.getMeasuredHeight());
             }
             return height;
+        }
+
+        private TextView measurementText(Context context, int size, int lineHeight,
+                                         int weight, int color) {
+            TextView probe = text(context, size, lineHeight, weight, color);
+            // These views are measured repeatedly but never added to a parent.
+            // TextView.setText() needs LayoutParams once the first layout exists.
+            probe.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            return probe;
         }
 
         private void measureText(TextView probe, int resource, int width) {
