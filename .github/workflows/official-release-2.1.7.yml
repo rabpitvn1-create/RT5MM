@@ -56,7 +56,12 @@ jobs:
         run: gradle --no-daemon :app:testDebugUnitTest
       - name: Lint and assemble release APK
         if: steps.version.outputs.matches == 'true'
-        run: gradle --no-daemon :app:lintRelease :app:assembleRelease
+        shell: bash
+        run: |
+          if ! gradle --no-daemon :app:lintRelease :app:assembleRelease; then
+            find app/build -name 'lint-results-release.txt' -type f -exec cat {} +
+            exit 1
+          fi
       - name: Verify APK package, version and signature
         if: steps.version.outputs.matches == 'true'
         shell: bash
